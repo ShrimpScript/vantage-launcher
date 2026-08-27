@@ -35,8 +35,8 @@ button:not(:disabled){cursor:pointer}
 h1,h2,p{margin:0}
 .mono{font-family:var(--mono); font-variation-settings:'wdth' 87.5; font-variant-numeric:tabular-nums}
 
-.app{display:grid; grid-template-columns:64px 1fr; grid-template-rows:100vh;
-  height:100vh; overflow:hidden}
+.app{display:grid; grid-template-columns:64px 1fr; grid-template-rows:100%;
+  height:100%; overflow:hidden}
 
 /* ── rail: no border, separated by ground vs surface ── */
 .rail{background:var(--rail); display:flex; flex-direction:column; align-items:center;
@@ -246,7 +246,8 @@ html.calm *{animation:none!important; transition:none!important}
 
 
 /* ═══ HOME ═══ two columns: what you do on the left, who/what you have on the right ═══ */
-.home{display:grid; gap:28px; grid-template-columns:1fr; align-content:start; padding-top:28px}
+.home{display:grid; gap:28px; grid-template-columns:1fr; align-content:start;
+  padding-top:28px; overflow-y:auto; min-height:0}
 @media(min-width:1000px){ .home{grid-template-columns:minmax(0,1fr) 288px} }
 .home > *{max-width:none; margin:0}
 .col-main{display:flex; flex-direction:column; gap:30px; min-width:0}

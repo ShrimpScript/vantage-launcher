@@ -19,6 +19,26 @@ fn main() {
     }
     if args.len() >= 2 && (args[1] == "--version" || args[1] == "-V") {
         println!("vantage {}", env!("CARGO_PKG_VERSION"));
+        let epoch: i64 = env!("VANTAGE_BUILD_EPOCH").parse().unwrap_or(0);
+        // Plain UTC from the epoch, no date crate for one line.
+        let (mut d, secs) = (epoch / 86_400, epoch % 86_400);
+        let (mut y, mut m2) = (1970, 1);
+        loop {
+            let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+            let len = if leap { 366 } else { 365 };
+            if d < len { break; }
+            d -= len; y += 1;
+        }
+        let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+        let months = [31, if leap {29} else {28}, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        for len in months {
+            if d < len { break; }
+            d -= len; m2 += 1;
+        }
+        println!(
+            "built {y:04}-{m2:02}-{:02} {:02}:{:02} UTC",
+            d + 1, secs / 3600, (secs % 3600) / 60
+        );
         return;
     }
     if args.len() >= 3 && args[1] == "--install" {
