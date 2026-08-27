@@ -24,6 +24,11 @@ fn main() {
         vantage_launcher_lib::headless_auth_status();
         return;
     }
+    if args.len() >= 3 && args[1] == "--launch" {
+        let name = args.get(3).map(String::as_str).unwrap_or("Player");
+        vantage_launcher_lib::headless_launch(&args[2], name);
+        return;
+    }
     if args.len() >= 3 && args[1] == "--set" {
         vantage_launcher_lib::headless_set(&args[2]);
         return;

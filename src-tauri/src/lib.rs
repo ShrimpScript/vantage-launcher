@@ -1,5 +1,7 @@
 mod error;
 mod install;
+mod java;
+mod launch;
 mod jar;
 mod auth;
 mod meta;
@@ -562,4 +564,54 @@ pub fn headless_auth_status() {
             println!("  apply for Minecraft API permission: https://aka.ms/mce-reviewappid");
         }
     }
+}
+
+/// `--launch <version> [name]`: assemble the command line and start the game.
+/// Uses an offline session until Microsoft approves the app — singleplayer works,
+/// online servers correctly refuse it.
+pub fn headless_launch(id: &str, name: &str) {
+    let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+    let outcome = rt.block_on(async {
+        let http = net::client()?;
+        let store = store::Store::discover()?;
+        let session = launch::Session::offline(name);
+        let (plan, dir) = launch::plan(&http, &store, id, &session, 4096).await?;
+        Ok::<_, Error>((plan, dir, session))
+    });
+
+    let (plan, dir, session) = match outcome {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("could not prepare launch: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    println!("java        {}", plan.java);
+    println!("main class  {}", plan.main_class);
+    println!("classpath   {} entries", plan.classpath_entries);
+    println!("game dir    {}", plan.game_dir);
+    println!("session     {} ({}) — offline", session.name, &session.uuid[..8]);
+    println!("jvm args    {}", plan.jvm_args.len());
+    println!("game args   {}", plan.game_args.len());
+
+    let mut child = match launch::spawn(&plan, std::path::Path::new(&dir)) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+    };
+    println!("\nstarted, pid {}", child.id());
+
+    // Surface the first lines of game output so a failure is visible rather than silent.
+    use std::io::{BufRead, BufReader};
+    if let Some(out) = child.stdout.take() {
+        let reader = BufReader::new(out);
+        for line in reader.lines().take(14).map_while(|l| l.ok()) {
+            println!("  | {line}");
+        }
+    }
+    println!("(still running — close the game window to exit)");
+    let _ = child.wait();
 }

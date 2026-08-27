@@ -6,9 +6,10 @@ telemetry.
 Built with Tauri v2 and Rust. The release binary is **4.9 MB** and the frontend is 78 KB
 including bundled fonts, because a launcher should not cost more than the thing it launches.
 
-> **Early.** Version installation, mod management and the mod bundle work today. Launching the
-> game does not yet — it needs a Microsoft API permission that is still pending approval. The
-> UI says so rather than pretending otherwise.
+> **Early.** Version installation, mod management, the mod bundle and launching the game all
+> work today. **Signing in does not yet** — that needs a Microsoft API permission which is
+> pending approval, so online play is unavailable and the UI says so rather than pretending
+> otherwise. Singleplayer runs on an offline session in the meantime.
 
 ## What works
 
@@ -25,6 +26,10 @@ including bundled fonts, because a launcher should not cost more than the thing 
   FerriteCore, Fabric API) that installs in one click and exports as a real `.mrpack` you can
   audit or import into another launcher. It can be removed just as easily; a bundle you cannot
   switch off is not a convenience.
+- **Launching.** Provisions the exact Java runtime the version asks for (26.2 wants Java 25),
+  assembles the classpath, resolves Mojang's rule-gated argument templates and starts the game.
+  The Java component manifest is 434 entries on Linux — 147 files, 82 directories and **205
+  symlinks** — and all three are handled, because missing the links leaves a subtly broken JRE.
 - **Microsoft sign-in** via OAuth 2.0 authorization code + PKCE over a loopback redirect. No
   code to type, no second device. Refresh tokens go to the OS credential store.
 
@@ -55,6 +60,7 @@ vantage-launcher --install 26.2            # install a version
 vantage-launcher --mods 26.2 sodium        # search Modrinth
 vantage-launcher --add 26.2 lithium        # install one mod
 vantage-launcher --set 26.2                # apply the Vantage Set and write the .mrpack
+vantage-launcher --launch 26.2 Player       # assemble the command line and start the game
 vantage-launcher --auth-status             # is a Microsoft client ID configured
 ```
 
