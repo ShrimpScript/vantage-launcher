@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vantage</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div class="app">
+    <nav class="rail" aria-label="Sections">
+      <svg class="mark" width="22" height="22" viewBox="0 0 32 32" aria-hidden="true">
+        <path fill="currentColor" d="M2 4 L16 28 L30 4 L24.21 4 L16 18.08 L7.79 4 Z"/>
+      </svg>
+      <button data-goto="play" class="on" title="Play" aria-current="page">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="butt" stroke-linejoin="miter" aria-hidden="true"><path d="M8 3.5 L20.5 12 L8 20.5 Z"/></svg>
+      </button>
+      <button data-goto="mods" title="Mods">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="butt" stroke-linejoin="miter" aria-hidden="true"><path d="M12 2.5 L21 7 L12 11.5 L3 7 Z"/><path d="M3 12 L12 16.5 L21 12"/><path d="M3 17 L12 21.5 L21 17"/></svg>
+      </button>
+      <button data-goto="settings" title="Settings" class="last">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="butt" stroke-linejoin="miter" aria-hidden="true"><path d="M3 6.5 H21 M3 12 H21 M3 17.5 H21"/><path d="M8 4 V9 M15.5 9.5 V14.5 M6.5 15 V20"/></svg>
+      </button>
+    </nav>
+
+    <main class="pane">
+      <header class="top">
+        <div class="acct" id="acct">
+          <img id="face" class="face" alt="" hidden />
+          <div class="acctxt">
+            <span class="who">Not signed in</span>
+            <span class="sub" id="acctsub">Sign in to play</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- ══ PLAY ══ -->
+      <div class="scroll screen" data-screen="play">
+        <section class="hero">
+          <div class="glow" aria-hidden="true"></div>
+          <div class="herobody">
+            <p class="eyebrow" id="eyebrow">&nbsp;</p>
+            <div class="actionrow">
+              <button id="go" class="cta" disabled>Loading</button>
+              <div class="pwrap">
+                <button id="version" class="verpick" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Change version">
+                  <span id="vlabel">&mdash;</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="butt" stroke-linejoin="miter" aria-hidden="true"><path d="M5 9 L12 16 L19 9"/></svg>
+                </button>
+              </div>
+            </div>
+            <p class="state" id="state">Reading Mojang&rsquo;s version manifest&hellip;</p>
+            <div class="bar" id="bar" hidden>
+              <div class="barline"><span id="barfill"></span></div>
+              <p class="barmeta" id="barmeta"></p>
+            </div>
+          </div>
+        </section>
+
+        <section class="block">
+          <div class="blockhead">
+            <h2>The Vantage Set</h2>
+            <div class="headact">
+              <span class="tot" id="settot"></span>
+              <button id="setbtn" class="act primary" type="button" hidden></button>
+            </div>
+          </div>
+          <div class="rows tight" id="setrows"></div>
+          <p class="foot" id="setfoot"></p>
+        </section>
+
+        <section class="block">
+          <div class="blockhead">
+            <h2>On this machine</h2>
+            <span class="tot" id="tot"></span>
+          </div>
+          <div class="cards" id="cards"></div>
+        </section>
+        <p id="msg" class="msg" hidden></p>
+      </div>
+
+      <!-- ══ MODS ══ -->
+      <div class="scroll screen" data-screen="mods" hidden>
+        <section class="block">
+          <div class="blockhead">
+            <h2>Mods</h2>
+            <span class="tot" id="modctx"></span>
+          </div>
+          <div class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="butt" stroke-linejoin="miter" aria-hidden="true"><path d="M3.5 3.5 H15.5 V15.5 H3.5 Z"/><path d="M15.5 15.5 L21 21"/></svg>
+            <input id="q" type="search" placeholder="Search Modrinth&hellip;" autocomplete="off" spellcheck="false" aria-label="Search Modrinth for mods" />
+          </div>
+          <div class="rows" id="results"></div>
+        </section>
+
+        <section class="block">
+          <div class="blockhead">
+            <h2>Installed</h2>
+            <span class="tot" id="modtot"></span>
+          </div>
+          <div class="rows" id="installed"></div>
+        </section>
+        <p id="modmsg" class="msg" hidden></p>
+      </div>
+
+      <!-- ══ SETTINGS ══ -->
+      <div class="scroll screen" data-screen="settings" hidden>
+        <section class="block">
+          <div class="blockhead"><h2>Privacy</h2></div>
+          <div class="setrows">
+            <div class="setrow">
+              <div class="lhs"><b>Telemetry</b><span>Nothing is collected. No analytics, no usage pings, no session tracking. If that ever changes it arrives as an opt-in screen listing every field by name, defaulted off.</span></div>
+              <span class="val on">Off &middot; nothing collected</span>
+            </div>
+            <div class="setrow">
+              <div class="lhs"><b>Advertising</b><span>There is no advertising surface in this application, and no surface that refreshes on a timer. That is enforced in the codebase, not in a policy.</span></div>
+              <span class="val on">None, by construction</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="block">
+          <div class="blockhead"><h2>Account</h2></div>
+          <div class="setrows">
+            <div class="setrow">
+              <div class="lhs"><b>Microsoft sign-in</b><span id="authhint">&mdash;</span></div>
+              <button id="signin" class="act primary" type="button" disabled>Sign in</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="block">
+          <div class="blockhead"><h2>Appearance</h2></div>
+          <div class="setrows">
+            <div class="setrow">
+              <div class="lhs"><b>Reduce motion</b><span>Follows your system setting. Turn it on here to override.</span></div>
+              <button id="rm" class="toggle" role="switch" aria-checked="false"><span></span></button>
+            </div>
+          </div>
+        </section>
+
+        <section class="block">
+          <div class="blockhead"><h2>Storage</h2></div>
+          <div class="setrows">
+            <div class="setrow">
+              <div class="lhs"><b>Content store</b><span id="storepath">&mdash;</span></div>
+              <span class="val" id="storeval">&mdash;</span>
+            </div>
+            <div class="setrow">
+              <div class="lhs"><b>Layout</b><span>Vanilla-compatible, so other launchers can read it and you can leave with your install intact.</span></div>
+              <span class="val">Portable</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
