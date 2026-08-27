@@ -340,3 +340,47 @@ html.calm *{animation:none!important; transition:none!important}
   border-radius:10px; transition:color var(--fast) linear, background var(--fast) linear}
 .tab:hover{color:var(--muted); background:var(--surface)}
 .tab[aria-selected="true"]{color:var(--ground); background:var(--amber)}
+
+
+/* ── project detail ────────────────────────────────────────────────────── */
+.detail{gap:22px; padding-top:24px}
+.detail > *{width:100%; max-width:860px; margin:0 auto}
+.back{display:inline-flex; align-items:center; gap:8px; align-self:flex-start;
+  font-size:14px; font-weight:600; color:var(--faint); padding:8px 14px 8px 10px;
+  border-radius:10px; transition:color var(--fast) linear, background var(--fast) linear}
+.back:hover{color:var(--text); background:var(--surface)}
+.back svg{width:17px; height:17px}
+.dhead{display:flex; align-items:flex-start; gap:18px; background:var(--surface);
+  border-radius:var(--r-hero); padding:20px; box-shadow:var(--lift-sm)}
+.dicon{width:76px; height:76px; border-radius:14px; flex:0 0 auto; background:var(--raised);
+  object-fit:cover}
+.dmeta{flex:1; min-width:0; display:flex; flex-direction:column; gap:7px}
+.dmeta h1{font-family:var(--display); font-variation-settings:'wdth' 118,'wght' 800;
+  font-size:28px; letter-spacing:-.015em; line-height:1.05}
+.dstats{font-size:12.5px; color:var(--faint)}
+.dstats .dl{font-family:var(--mono); font-variation-settings:'wdth' 87.5;
+  font-variant-numeric:tabular-nums; color:var(--steel)}
+
+.gallery{display:flex; gap:12px; overflow-x:auto; padding-bottom:6px}
+.gallery img{height:190px; border-radius:var(--r); flex:0 0 auto; background:var(--surface)}
+.gallery:empty{display:none}
+
+/* author-written body — the subset renderer in md.ts decides what can appear here */
+.body{font-size:14.5px; color:var(--muted); line-height:1.65; user-select:text}
+.body h3,.body h4,.body h5,.body h6{font-family:var(--display);
+  font-variation-settings:'wdth' 112,'wght' 700; color:var(--text); margin:22px 0 8px}
+.body h3{font-size:19px} .body h4{font-size:16.5px} .body h5,.body h6{font-size:15px}
+.body p{margin:0 0 11px}
+.body ul{margin:0 0 12px; padding-left:20px}
+.body li{margin:0 0 5px}
+.body a{color:var(--steel); text-decoration:none; border-bottom:1px solid transparent}
+.body a:hover{border-bottom-color:var(--steel)}
+.body code{font-family:var(--mono); font-variation-settings:'wdth' 87.5; font-size:12.5px;
+  background:var(--surface); padding:1px 5px; border-radius:5px; color:var(--text)}
+.body pre{background:var(--surface); padding:13px 15px; border-radius:var(--r);
+  overflow-x:auto; font-family:var(--mono); font-size:12.5px; margin:0 0 12px}
+.body hr{border:0; height:1px; background:var(--edge); margin:20px 0}
+.body strong{color:var(--text); font-weight:600}
+.dlinks{font-size:13px; color:var(--faint); display:flex; gap:16px; flex-wrap:wrap}
+.dlinks a{color:var(--steel); text-decoration:none}
+.dlinks a:hover{text-decoration:underline}

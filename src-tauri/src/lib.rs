@@ -305,6 +305,12 @@ fn packs_installed(state: State<'_, AppState>, kind: String) -> Result<Vec<Insta
     Ok(out)
 }
 
+/// The full project page for the detail view.
+#[tauri::command]
+async fn project_detail(state: State<'_, AppState>, project: String) -> Result<modrinth::Detail> {
+    modrinth::detail(&state.http, &project).await
+}
+
 /// Exactly which project ids are installed for this kind. No slug-versus-filename guessing.
 #[tauri::command]
 fn installed_ids(state: State<'_, AppState>, kind: String) -> Vec<String> {
@@ -583,7 +589,8 @@ pub fn run() {
             mod_search, mod_install, mods_installed, mod_remove,
             set_status, set_apply, set_remove,
             auth_status, sign_in, launch_game,
-            pack_search, pack_install, packs_installed, pack_remove, installed_ids
+            pack_search, pack_install, packs_installed, pack_remove, installed_ids,
+            project_detail
         ])
         .run(tauri::generate_context!())
         .expect("error while running Vantage");

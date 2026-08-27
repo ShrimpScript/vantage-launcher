@@ -181,3 +181,58 @@ pub async fn projects(http: &reqwest::Client, slugs: &[&str]) -> Result<Vec<Proj
         .json()
         .await?)
 }
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GalleryItem {
+    pub url: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub featured: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct License {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub url: Option<String>,
+}
+
+/// The full project page. `body` is author-written markdown and must be treated as untrusted.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Detail {
+    pub id: String,
+    pub slug: String,
+    pub title: String,
+    pub description: String,
+    #[serde(default)]
+    pub body: String,
+    pub downloads: u64,
+    #[serde(default)]
+    pub followers: u64,
+    #[serde(default)]
+    pub icon_url: Option<String>,
+    #[serde(default)]
+    pub categories: Vec<String>,
+    #[serde(default)]
+    pub gallery: Vec<GalleryItem>,
+    #[serde(default)]
+    pub license: Option<License>,
+    #[serde(default)]
+    pub source_url: Option<String>,
+    #[serde(default)]
+    pub issues_url: Option<String>,
+}
+
+pub async fn detail(http: &reqwest::Client, project: &str) -> Result<Detail> {
+    Ok(http
+        .get(format!("{API}/project/{project}"))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?)
+}

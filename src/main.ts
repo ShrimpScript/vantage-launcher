@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Picker, type PickerItem } from "./picker";
+import { render as renderMarkdown } from "./md";
 
 type Entry = { id: string; type: string; url: string; sha1: string; releaseTime: string };
 type Versions = {
@@ -308,6 +309,11 @@ function modRow(h: Hit, owned: string[]): HTMLElement {
     }
   });
   row.append(btn);
+  row.style.cursor = "pointer";
+  row.addEventListener("click", (e) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    void openProject(h.project_id, "mod", "mods");
+  });
   return row;
 }
 
@@ -449,7 +455,7 @@ async function refreshSet() {
         el.innerHTML =
           `<span class="dot${m.installed ? "" : " off"}"></span>` + icon +
           `<span class="mn">${m.title}</span><span class="mr">${m.role}</span>`;
-        el.addEventListener("click", () => goto("mods"));
+        el.addEventListener("click", () => void openProject(m.slug, "mod", "play"));
         return el;
       }),
     );
@@ -580,6 +586,11 @@ async function runPackSearch(term: string) {
         }
       });
       row.append(btn);
+      row.style.cursor = "pointer";
+      row.addEventListener("click", (e) => {
+        if ((e.target as HTMLElement).closest("button")) return;
+        void openProject(h.project_id, packKind, "packs");
+      });
       return row;
     }));
   } catch (e) {
@@ -625,3 +636,94 @@ async function refreshPacks() {
     return row;
   }));
 }
+
+
+/* ── project detail ──────────────────────────────────────────────────────
+   Opened from any search row. Body is author-written markdown, so it goes
+   through the escaping subset renderer in md.ts and never touches innerHTML raw. */
+type GalleryItem = { url: string; title: string | null; featured: boolean };
+type Detail = {
+  id: string; slug: string; title: string; description: string; body: string;
+  downloads: number; followers: number; icon_url: string | null;
+  categories: string[]; gallery: GalleryItem[];
+  license: { id: string; name: string; url: string | null } | null;
+  source_url: string | null; issues_url: string | null;
+};
+
+let backTo = "mods";
+
+async function openProject(project: string, kind: "mod" | "resourcepack" | "shader", from: string) {
+  backTo = from;
+  goto("detail");
+  $("dtitle").textContent = "Loading…";
+  $("ddesc").textContent = "";
+  $("dstats").textContent = "";
+  $("dbody").replaceChildren();
+  $("dgallery").replaceChildren();
+  $("dlinks").replaceChildren();
+  const icon = $<HTMLImageElement>("dicon");
+  icon.removeAttribute("src");
+
+  try {
+    const [d, owned] = await Promise.all([
+      invoke<Detail>("project_detail", { project }),
+      invoke<string[]>("installed_ids", { kind }),
+    ]);
+    $("dtitle").textContent = d.title;
+    $("ddesc").textContent = d.description;
+    if (d.icon_url) icon.src = d.icon_url;
+
+    const lic = d.license?.name || d.license?.id || "";
+    $("dstats").innerHTML =
+      `<span class="dl">${d.downloads.toLocaleString()}</span> downloads · ` +
+      `<span class="dl">${d.followers.toLocaleString()}</span> followers` +
+      (d.categories.length ? ` · ${d.categories.join(", ")}` : "") +
+      (lic ? ` · ${lic}` : "");
+
+    $("dgallery").replaceChildren(
+      ...d.gallery.slice(0, 8).map((g) => {
+        const im = document.createElement("img");
+        im.src = g.url;
+        im.alt = g.title ?? "";
+        im.loading = "lazy";
+        return im;
+      }),
+    );
+
+    $("dbody").innerHTML = renderMarkdown(d.body || d.description);
+
+    const links: string[] = [];
+    if (d.source_url) links.push(`<a href="${d.source_url}" target="_blank" rel="noreferrer noopener">Source</a>`);
+    if (d.issues_url) links.push(`<a href="${d.issues_url}" target="_blank" rel="noreferrer noopener">Issues</a>`);
+    links.push(`<a href="https://modrinth.com/project/${d.slug}" target="_blank" rel="noreferrer noopener">Modrinth</a>`);
+    $("dlinks").innerHTML = links.join("");
+
+    const add = $<HTMLButtonElement>("dadd");
+    const already = owned.includes(d.id) || owned.includes(d.slug);
+    add.className = already ? "act" : "act primary";
+    add.textContent = already ? "Added" : "Add";
+    add.disabled = already;
+    add.onclick = async () => {
+      add.disabled = true;
+      add.textContent = "Adding…";
+      try {
+        if (kind === "mod") {
+          await invoke("mod_install", { project: d.id, gameVersion: selected.value });
+        } else {
+          await invoke("pack_install", { project: d.id, gameVersion: selected.value, kind });
+        }
+        add.className = "act";
+        add.textContent = "Added";
+      } catch (e) {
+        add.disabled = false;
+        add.textContent = "Add";
+        add.title = String(e);
+      }
+    };
+  } catch (e) {
+    $("dtitle").textContent = "Could not load that page";
+    $("ddesc").textContent = String(e);
+  }
+}
+
+$("dback").addEventListener("click", () => goto(backTo));
