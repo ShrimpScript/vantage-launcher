@@ -35,7 +35,8 @@ button:not(:disabled){cursor:pointer}
 h1,h2,p{margin:0}
 .mono{font-family:var(--mono); font-variation-settings:'wdth' 87.5; font-variant-numeric:tabular-nums}
 
-.app{display:grid; grid-template-columns:64px 1fr; height:100vh}
+.app{display:grid; grid-template-columns:64px 1fr; grid-template-rows:100vh;
+  height:100vh; overflow:hidden}
 
 /* ── rail: no border, separated by ground vs surface ── */
 .rail{background:var(--rail); display:flex; flex-direction:column; align-items:center;
@@ -47,7 +48,8 @@ h1,h2,p{margin:0}
 .rail button:hover{color:var(--muted); background:var(--surface)}
 .rail button.on{color:var(--text); background:var(--surface)}
 
-.pane{display:flex; flex-direction:column; min-width:0; background:var(--ground)}
+.pane{display:flex; flex-direction:column; min-width:0; min-height:0;
+  overflow:hidden; background:var(--ground)}
 .screen{overflow-y:auto; flex:1; min-height:0; padding:0 32px 40px;
   display:flex; flex-direction:column; gap:32px}
 .rail .last{margin-top:auto}
