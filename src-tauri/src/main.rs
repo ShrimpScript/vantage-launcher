@@ -12,6 +12,15 @@ fn main() {
     }
 
     let args: Vec<String> = std::env::args().collect();
+
+    if args.len() >= 2 && (args[1] == "--help" || args[1] == "-h") {
+        print!("{}", vantage_launcher_lib::HELP);
+        return;
+    }
+    if args.len() >= 2 && (args[1] == "--version" || args[1] == "-V") {
+        println!("vantage {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     if args.len() >= 3 && args[1] == "--install" {
         vantage_launcher_lib::headless_install(&args[2]);
         return;

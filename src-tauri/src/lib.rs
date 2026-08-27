@@ -17,6 +17,34 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
+pub const HELP: &str = "\
+vantage — a Minecraft: Java Edition launcher
+
+    vantage                            open the launcher
+
+Versions
+    vantage --install <version>        download and verify a version
+    vantage --launch <version> [name]  start the game
+                                       (offline session until Microsoft sign-in)
+
+Content
+    vantage --mods <version> <query>   search Modrinth for mods
+    vantage --add <version> <project>  install one mod
+    vantage --pack <version> <kind> <project>
+                                       install a resource pack or shader
+                                       kind: resourcepack | shader
+    vantage --set <version>            apply the Vantage Set and write the .mrpack
+
+Account
+    vantage --auth-status              is a Microsoft client ID configured
+
+    vantage --help                     this
+    vantage --version                  version
+
+Everything lives in ~/.local/share/vantage, in the vanilla layout, so other
+launchers can read it.
+";
+
 pub struct AppState {
     http: reqwest::Client,
     store: store::Store,
