@@ -49,6 +49,8 @@ pub struct AppState {
     http: reqwest::Client,
     store: store::Store,
     manifest: tokio::sync::Mutex<Option<meta::Manifest>>,
+    /// pid of the running game, if any. The launcher should say when the game is up.
+    running: std::sync::Mutex<Option<u32>>,
 }
 
 impl AppState {
@@ -205,6 +207,13 @@ async fn mod_search(
 
 /* ── resource packs and shaders ──────────────────────────────────────────── */
 
+/// Delete the previous file for this project, if the new install supersedes it.
+fn drop_superseded(store: &store::Store, kind: &str, project: &str, new_file: &str, dir: &std::path::Path) {
+    if let Some(old) = manifest::superseded(store, "main", kind, project, new_file) {
+        let _ = std::fs::remove_file(dir.join(old));
+    }
+}
+
 fn kind_of(s: &str) -> Result<modrinth::Kind> {
     match s {
         "resourcepack" => Ok(modrinth::Kind::ResourcePack),
@@ -274,7 +283,13 @@ async fn pack_install(
         std::fs::copy(&blob, &link)?;
     }
 
-    manifest::record(&state.store, "main", &kind, &project, &file.filename)?;
+    drop_superseded(&state.store, &kind, &project, &file.filename, &dir);
+    let meta = modrinth::detail(&state.http, &project).await.ok();
+    manifest::record(
+        &state.store, "main", &kind, &project, &file.filename,
+        meta.as_ref().map_or("", |d| d.title.as_str()),
+        meta.as_ref().and_then(|d| d.icon_url.clone()),
+    )?;
     Ok(PackInstalled {
         filename: file.filename,
         bytes: file.size,
@@ -282,27 +297,10 @@ async fn pack_install(
     })
 }
 
-#[derive(Serialize)]
-pub struct InstalledPack {
-    filename: String,
-    bytes: u64,
-}
-
 #[tauri::command]
-fn packs_installed(state: State<'_, AppState>, kind: String) -> Result<Vec<InstalledPack>> {
+fn packs_installed(state: State<'_, AppState>, kind: String) -> Result<Vec<InstalledMod>> {
     let k = kind_of(&kind)?;
-    let dir = state.store.profile_sub("main", k.profile_dir());
-    let Ok(rd) = std::fs::read_dir(&dir) else { return Ok(Vec::new()) };
-    let mut out: Vec<InstalledPack> = rd
-        .flatten()
-        .filter_map(|e| {
-            let name = e.file_name().to_string_lossy().to_string();
-            if !name.ends_with(".zip") { return None; }
-            Some(InstalledPack { filename: name, bytes: e.metadata().ok()?.len() })
-        })
-        .collect();
-    out.sort_by(|a, b| a.filename.cmp(&b.filename));
-    Ok(out)
+    Ok(enrich(&state.store, &kind, state.store.profile_sub("main", k.profile_dir()), ".zip"))
 }
 
 /// The full project page for the detail view.
@@ -333,25 +331,40 @@ fn pack_remove(state: State<'_, AppState>, kind: String, filename: String) -> Re
 pub struct InstalledMod {
     filename: String,
     bytes: u64,
+    title: String,
+    icon_url: Option<String>,
+    project: Option<String>,
 }
 
-#[tauri::command]
-fn mods_installed(state: State<'_, AppState>) -> Vec<InstalledMod> {
-    let dir = state.store.profile_mods("main");
+/// Files on disk, enriched from the manifest where we know what they are. A jar dropped in
+/// by hand still shows up — it just has no title or icon, which is honest.
+fn enrich(store: &store::Store, kind: &str, dir: std::path::PathBuf, ext: &str) -> Vec<InstalledMod> {
+    let known = manifest::list(store, "main", kind);
     let Ok(rd) = std::fs::read_dir(&dir) else { return Vec::new() };
     let mut out: Vec<InstalledMod> = rd
         .flatten()
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().to_string();
-            if !name.ends_with(".jar") {
+            if !name.ends_with(ext) {
                 return None;
             }
-            let bytes = e.metadata().ok()?.len();
-            Some(InstalledMod { filename: name, bytes })
+            let hit = known.iter().find(|(_, v)| v.file() == name);
+            Some(InstalledMod {
+                bytes: e.metadata().ok()?.len(),
+                title: hit.map_or_else(|| name.clone(), |(_, v)| v.title().to_string()),
+                icon_url: hit.and_then(|(_, v)| v.icon().map(str::to_string)),
+                project: hit.map(|(k, _)| k.clone()),
+                filename: name,
+            })
         })
         .collect();
-    out.sort_by(|a, b| a.filename.cmp(&b.filename));
+    out.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
     out
+}
+
+#[tauri::command]
+fn mods_installed(state: State<'_, AppState>) -> Vec<InstalledMod> {
+    enrich(&state.store, "mod", state.store.profile_mods("main"), ".jar")
 }
 
 #[derive(Serialize)]
@@ -393,7 +406,14 @@ async fn mod_install(
     )
     .await?;
 
-    manifest::record(&state.store, "main", "mod", &project, &file.filename)?;
+    drop_superseded(&state.store, "mod", &project, &file.filename, &state.store.profile_mods("main"));
+    // One lookup so the installed list can show a real title and icon later, offline.
+    let meta = modrinth::detail(&state.http, &project).await.ok();
+    manifest::record(
+        &state.store, "main", "mod", &project, &file.filename,
+        meta.as_ref().map_or("", |d| d.title.as_str()),
+        meta.as_ref().and_then(|d| d.icon_url.clone()),
+    )?;
     Ok(ModInstalled {
         filename: file.filename,
         version_number: ver.version_number,
@@ -469,6 +489,15 @@ async fn set_apply(state: State<'_, AppState>, game_version: String) -> Result<S
     let r = pack::resolve(&state.http, &game_version).await?;
     let bytes = pack::apply(&state.http, &state.store, &r.index).await?;
     let mrpack = pack::export(&state.store, &r.index)?;
+    // The Set already knows every member's title and icon — record them so the installed
+    // list can show what these jars actually are.
+    let mods_dir = state.store.profile_mods("main");
+    for m in &r.members {
+        drop_superseded(&state.store, "mod", &m.slug, &m.filename, &mods_dir);
+        manifest::record(
+            &state.store, "main", "mod", &m.slug, &m.filename, &m.title, m.icon_url.clone(),
+        )?;
+    }
     Ok(SetReport {
         installed: r.index.files.len(),
         bytes,
@@ -538,20 +567,48 @@ pub struct Launched {
 /// singleplayer works, online servers correctly refuse it, and the UI says so.
 #[tauri::command]
 async fn launch_game(
+    app: AppHandle,
     state: State<'_, AppState>,
     id: String,
     name: String,
     memory_mb: u32,
 ) -> Result<Launched> {
+    if state.running.lock().map(|g| g.is_some()).unwrap_or(false) {
+        return Err(Error::Other("the game is already running".into()));
+    }
     let session = launch::Session::offline(&name);
     let (plan, dir) = launch::plan(&state.http, &state.store, &id, &session, memory_mb).await?;
-    let child = launch::spawn(&plan, &dir)?;
+    let mut child = launch::spawn(&plan, &dir)?;
+    let pid = child.id();
+    if let Ok(mut g) = state.running.lock() {
+        *g = Some(pid);
+    }
+
+    // Wait on the child off the async runtime, and tell the window when it goes away, so the
+    // Play button reflects reality rather than whatever it last showed.
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        let code = child.wait().ok().and_then(|s| s.code()).unwrap_or(-1);
+        if let Some(st) = app2.try_state::<AppState>() {
+            if let Ok(mut g) = st.running.lock() {
+                *g = None;
+            }
+        }
+        let _ = app2.emit("game:exited", code);
+    });
+
     Ok(Launched {
-        pid: child.id(),
+        pid,
         java: plan.java.clone(),
         classpath_entries: plan.classpath_entries,
         offline: true,
     })
+}
+
+/// Is the game up right now?
+#[tauri::command]
+fn game_running(state: State<'_, AppState>) -> Option<u32> {
+    state.running.lock().ok().and_then(|g| *g)
 }
 
 #[derive(Serialize)]
@@ -581,6 +638,7 @@ pub fn run() {
                 http: net::client()?,
                 store: store::Store::discover()?,
                 manifest: tokio::sync::Mutex::new(None),
+                running: std::sync::Mutex::new(None),
             });
             Ok(())
         })
@@ -588,7 +646,7 @@ pub fn run() {
             versions, inspect, install, store_info, texture, default_skin, block_list,
             mod_search, mod_install, mods_installed, mod_remove,
             set_status, set_apply, set_remove,
-            auth_status, sign_in, launch_game,
+            auth_status, sign_in, launch_game, game_running,
             pack_search, pack_install, packs_installed, pack_remove, installed_ids,
             project_detail
         ])
@@ -718,6 +776,13 @@ pub fn headless_set(game_version: &str) {
         let r = pack::resolve(&http, game_version).await?;
         let bytes = pack::apply(&http, &store, &r.index).await?;
         let out = pack::export(&store, &r.index)?;
+        let mods_dir = store.profile_mods("main");
+        for m in &r.members {
+            if let Some(old) = manifest::superseded(&store, "main", "mod", &m.slug, &m.filename) {
+                let _ = std::fs::remove_file(mods_dir.join(old));
+            }
+            manifest::record(&store, "main", "mod", &m.slug, &m.filename, &m.title, m.icon_url.clone())?;
+        }
         Ok::<_, Error>((r, bytes, out))
     }) {
         Ok((r, bytes, out)) => {
@@ -833,7 +898,15 @@ pub fn headless_pack(game_version: &str, kind: &str, project: &str) {
         let _ = std::fs::remove_file(&link);
         let linked = std::fs::hard_link(&blob, &link).is_ok();
         if !linked { std::fs::copy(&blob, &link)?; }
-        manifest::record(&store, "main", kind, project, &file.filename)?;
+        if let Some(old) = manifest::superseded(&store, "main", kind, project, &file.filename) {
+            let _ = std::fs::remove_file(dir.join(old));
+        }
+        let meta = modrinth::detail(&http, project).await.ok();
+        manifest::record(
+            &store, "main", kind, project, &file.filename,
+            meta.as_ref().map_or("", |d| d.title.as_str()),
+            meta.as_ref().and_then(|d| d.icon_url.clone()),
+        )?;
         Ok::<_, Error>((ver.version_number, file, blob, link, linked))
     }) {
         Ok((num, file, blob, link, linked)) => {

@@ -385,3 +385,8 @@ html.calm *{animation:none!important; transition:none!important}
 .dlinks{font-size:13px; color:var(--faint); display:flex; gap:16px; flex-wrap:wrap}
 .dlinks a{color:var(--steel); text-decoration:none}
 .dlinks a:hover{text-decoration:underline}
+
+/* the game is up — the primary action says so instead of inviting a second launch */
+.cta.running{background:var(--raised); color:var(--ok); opacity:1}
+.cta.running::before{content:""; width:8px; height:8px; border-radius:50%;
+  background:var(--ok); display:inline-block; margin-right:10px; vertical-align:middle}

@@ -25,7 +25,10 @@ type Hit = {
   project_id: string; slug: string; title: string; description: string;
   author: string; downloads: number; icon_url: string | null; categories: string[];
 };
-type InstalledMod = { filename: string; bytes: number };
+type InstalledMod = {
+  filename: string; bytes: number; title: string;
+  icon_url: string | null; project: string | null;
+};
 type SetMember = {
   slug: string; title: string; role: string; version_number: string;
   version_type: string; filename: string; bytes: number; installed: boolean;
@@ -49,6 +52,21 @@ const n = (v: number) => v.toLocaleString();
 const go = $<HTMLButtonElement>("go");
 const selected = { value: "" };
 let mode: "install" | "verify" | "play" = "install";
+let gameRunning = false;
+
+/** The Play button must say what the game is actually doing. */
+function paintRunning() {
+  const id = selected.value;
+  if (gameRunning) {
+    go.textContent = "Running";
+    go.disabled = true;
+    go.classList.add("running");
+    $("pcmeta").textContent = `Minecraft ${id} is running`;
+  } else {
+    go.classList.remove("running");
+    if (mode === "play") { go.textContent = "Play"; go.disabled = false; }
+  }
+}
 
 function say(html: string, kind: "" | "ok" | "bad" = "") {
   const m = $("msg");
@@ -145,7 +163,7 @@ async function inspect(id: string) {
       go.textContent = "Play";
       go.disabled = false;
       mode = "play";
-      $("pcmeta").textContent = "Ready to play";
+      $("pcmeta").textContent = gameRunning ? `Minecraft ${i.id} is running` : "Ready to play";
       $("state").textContent = "Offline session — singleplayer only until you sign in.";
     } else {
       go.textContent = "Install";
@@ -222,13 +240,21 @@ go.addEventListener("click", async () => {
   go.textContent = "Starting…";
   try {
     await invoke<Launched>("launch_game", { id, name: "Player", memoryMb: 4096 });
-    say(`<b>Minecraft ${id} is running.</b>`, "ok");
+    gameRunning = true;
+    paintRunning();
+    $("msg").hidden = true;
   } catch (e) {
     say(`Could not start the game: ${e}`, "bad");
   } finally {
-    go.disabled = false;
-    go.textContent = `Play ${id}`;
+    if (!gameRunning) { go.disabled = false; go.textContent = "Play"; }
   }
+});
+
+listen<number>("game:exited", ({ payload: code }) => {
+  gameRunning = false;
+  paintRunning();
+  if (code !== 0) say(`Minecraft exited with code ${code}.`, "bad");
+  void inspect(selected.value);
 });
 
 
@@ -375,8 +401,11 @@ async function refreshMods() {
   list.replaceChildren(...installed.map((m) => {
     const row = document.createElement("div");
     row.className = "row";
-    row.innerHTML =
-      `<div class="ic"></div><div class="body"><span class="t">${m.filename}</span>` +
+    const icon = m.icon_url
+      ? `<img class="ic" src="${m.icon_url}" alt="" loading="lazy" />`
+      : `<div class="ic"></div>`;
+    row.innerHTML = icon + `<div class="body"><span class="t">${m.title}</span>` +
+      `<span class="d">${m.filename}</span>` +
       `<span class="by"><span class="dl">${(m.bytes / 1048576).toFixed(1)}</span> MB</span></div>`;
     const rm = document.createElement("button");
     rm.className = "act quiet";
@@ -460,7 +489,7 @@ async function refreshSet() {
       }),
     );
     const on = v.members.filter((m) => m.installed).length;
-    if (mode === "play") {
+    if (mode === "play" && !gameRunning) {
       $("pcmeta").textContent = `Fabric ${v.loader} · ${on} mod${on === 1 ? "" : "s"}`;
     }
     $("settot").textContent = v.applied ? "Applied" : `${v.members.length} pinned`;
@@ -506,7 +535,6 @@ void boot();
 /* ── packs: resource packs and shaders ───────────────────────────────────
    Same rows as mods, but a different Modrinth project type — and packs publish
    against the `minecraft` loader, so they must not be filtered as Fabric mods. */
-type InstalledPack = { filename: string; bytes: number };
 type PackInstalled = { filename: string; bytes: number; version_number: string };
 
 const pq = $<HTMLInputElement>("pq");
@@ -608,7 +636,7 @@ pq.addEventListener("input", () => {
 async function refreshPacks() {
   const label = packKind === "shader" ? "Shaders" : "Resource packs";
   $("packctx").textContent = `${label} · ${selected.value}`;
-  const list = await invoke<InstalledPack[]>("packs_installed", { kind: packKind });
+  const list = await invoke<InstalledMod[]>("packs_installed", { kind: packKind });
   const el = $("packinstalled");
   $("packtot").textContent = list.length
     ? `${list.length} · ${(list.reduce((a, p) => a + p.bytes, 0) / 1048576).toFixed(1)} MB`
@@ -623,7 +651,11 @@ async function refreshPacks() {
   el.replaceChildren(...list.map((p) => {
     const row = document.createElement("div");
     row.className = "row";
-    row.innerHTML = `<div class="ic"></div><div class="body"><span class="t">${p.filename}</span>` +
+    const icon = p.icon_url
+      ? `<img class="ic" src="${p.icon_url}" alt="" loading="lazy" />`
+      : `<div class="ic"></div>`;
+    row.innerHTML = icon + `<div class="body"><span class="t">${p.title}</span>` +
+      `<span class="d">${p.filename}</span>` +
       `<span class="by"><span class="dl">${(p.bytes / 1048576).toFixed(1)}</span> MB</span></div>`;
     const rm = document.createElement("button");
     rm.className = "act quiet";
