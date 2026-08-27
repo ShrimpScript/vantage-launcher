@@ -366,6 +366,37 @@ async fn sign_in(state: State<'_, AppState>) -> Result<auth::Account> {
     auth::sign_in(&state.http, &id).await
 }
 
+
+/* ── launching ───────────────────────────────────────────────────────────── */
+
+#[derive(Serialize)]
+pub struct Launched {
+    pid: u32,
+    java: String,
+    classpath_entries: usize,
+    offline: bool,
+}
+
+/// Start the game. Until Microsoft approves the app this runs an offline session:
+/// singleplayer works, online servers correctly refuse it, and the UI says so.
+#[tauri::command]
+async fn launch_game(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+    memory_mb: u32,
+) -> Result<Launched> {
+    let session = launch::Session::offline(&name);
+    let (plan, dir) = launch::plan(&state.http, &state.store, &id, &session, memory_mb).await?;
+    let child = launch::spawn(&plan, &dir)?;
+    Ok(Launched {
+        pid: child.id(),
+        java: plan.java.clone(),
+        classpath_entries: plan.classpath_entries,
+        offline: true,
+    })
+}
+
 #[derive(Serialize)]
 pub struct StoreInfo {
     root: String,
@@ -400,7 +431,7 @@ pub fn run() {
             versions, inspect, install, store_info, texture, default_skin, block_list,
             mod_search, mod_install, mods_installed, mod_remove,
             set_status, set_apply, set_remove,
-            auth_status, sign_in
+            auth_status, sign_in, launch_game
         ])
         .run(tauri::generate_context!())
         .expect("error while running Vantage");

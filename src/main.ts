@@ -36,6 +36,7 @@ type SetView = {
 type SetReport = { installed: number; bytes: number; mrpack: string; seconds: number };
 type Account = { id: string; name: string };
 type AuthStatus = { configured: boolean; client_id_path: string; account: Account | null };
+type Launched = { pid: number; java: string; classpath_entries: number; offline: boolean };
 type ModInstalled = { filename: string; version_number: string; version_type: string; bytes: number };
 type StoreInfo = { root: string; files: number; bytes: number; versions: Installed[] };
 
@@ -45,7 +46,7 @@ const n = (v: number) => v.toLocaleString();
 
 const go = $<HTMLButtonElement>("go");
 const selected = { value: "" };
-let mode: "install" | "verify" = "install";
+let mode: "install" | "verify" | "play" = "install";
 
 function say(html: string, kind: "" | "ok" | "bad" = "") {
   const m = $("msg");
@@ -121,17 +122,21 @@ async function inspect(id: string) {
     const i = await invoke<Inspection>("inspect", { id });
     if (mine !== token) return;
 
+    const second = $<HTMLButtonElement>("second");
     if (i.installed) {
-      go.textContent = "Verify files";
+      go.textContent = `Play ${i.id}`;
       go.disabled = false;
-      mode = "verify";
+      mode = "play";
+      second.hidden = false;
+      second.textContent = "Verify files";
       $("eyebrow").innerHTML = `<span class="ready">Ready</span> &middot; Java ${i.java?.majorVersion ?? "—"} &middot; ${n(i.libs_applicable)} libraries`;
       $("state").innerHTML =
-        `Launch unlocks with Microsoft sign-in &mdash; the API permission is still pending.`;
+        `Offline session &mdash; singleplayer only. Online play needs Microsoft sign-in, and that API permission is still pending.`;
     } else {
       go.textContent = "Install";
       go.disabled = false;
       mode = "install";
+      second.hidden = true;
       $("eyebrow").innerHTML = `Not installed &middot; Java ${i.java?.majorVersion ?? "—"}`;
       $("state").innerHTML =
         `<span class="n">${gb(i.client_bytes + i.asset_bytes)}</span> to fetch &middot; ` +
@@ -172,10 +177,9 @@ listen<Progress>("install:progress", ({ payload: p }) => {
     `${label} · ${n(p.done)} / ${n(p.total)} files · ${(p.bytes / 1048576).toFixed(0)} of ${(p.total_bytes / 1048576).toFixed(0)} MB`;
 });
 
-go.addEventListener("click", async () => {
-  const id = selected.value;
+async function runInstall(id: string, verifying: boolean) {
   go.disabled = true;
-  $("state").textContent = mode === "verify" ? `Verifying ${id}…` : `Installing ${id}…`;
+  $("state").textContent = verifying ? `Verifying ${id}…` : `Installing ${id}…`;
   try {
     const r = await invoke<Report>("install", { id });
     const rate = (r.files / Math.max(r.seconds, 0.001)).toFixed(0);
@@ -193,7 +197,32 @@ go.addEventListener("click", async () => {
     await refreshStore();
     await inspect(id);
   }
+}
+
+go.addEventListener("click", async () => {
+  const id = selected.value;
+  if (mode !== "play") {
+    await runInstall(id, mode === "verify");
+    return;
+  }
+  go.disabled = true;
+  go.textContent = "Starting…";
+  try {
+    const l = await invoke<Launched>("launch_game", { id, name: "Player", memoryMb: 4096 });
+    say(
+      `<b>${id} is running.</b> pid ${l.pid}, ${l.classpath_entries} classpath entries, ` +
+        `on the runtime Vantage provisioned. Offline session &mdash; singleplayer only until sign-in.`,
+      "ok",
+    );
+  } catch (e) {
+    say(`Could not start the game: ${e}`, "bad");
+  } finally {
+    go.disabled = false;
+    go.textContent = `Play ${id}`;
+  }
 });
+
+$("second").addEventListener("click", () => void runInstall(selected.value, true));
 
 
 /* ── screen switching ────────────────────────────────────────────────────── */
