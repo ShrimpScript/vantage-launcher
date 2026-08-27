@@ -61,6 +61,9 @@ pub struct Member {
     pub slug: String,
     pub title: String,
     pub role: &'static str,
+    /// From Modrinth, so the UI shows the author's real icon rather than a blank square.
+    pub icon_url: Option<String>,
+    pub color: Option<u32>,
     pub version_number: String,
     pub version_type: String,
     pub filename: String,
@@ -119,6 +122,8 @@ pub async fn resolve(http: &reqwest::Client, game_version: &str) -> Result<Resol
                 slug: (*slug).to_string(),
                 title: (*title).to_string(),
                 role,
+                icon_url: None,
+                color: None,
                 version_number: ver.version_number.clone(),
                 version_type: ver.version_type.clone(),
                 filename: file.filename.clone(),
@@ -134,13 +139,21 @@ pub async fn resolve(http: &reqwest::Client, game_version: &str) -> Result<Resol
         ))
     });
 
-    let (loader, resolved) =
-        futures::try_join!(loader_fut, futures::future::try_join_all(member_futs))?;
+    let slugs: Vec<&str> = MEMBERS.iter().map(|(s, _, _)| *s).collect();
+    let (loader, resolved, projects) = futures::try_join!(
+        loader_fut,
+        futures::future::try_join_all(member_futs),
+        modrinth::projects(http, &slugs)
+    )?;
 
     let mut files = Vec::with_capacity(resolved.len());
     let mut members = Vec::with_capacity(resolved.len());
     let mut total_bytes = 0u64;
-    for (m, f) in resolved {
+    for (mut m, f) in resolved {
+        if let Some(p) = projects.iter().find(|p| p.slug == m.slug) {
+            m.icon_url = p.icon_url.clone();
+            m.color = p.color;
+        }
         total_bytes += m.bytes;
         members.push(m);
         files.push(f);

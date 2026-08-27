@@ -24,60 +24,74 @@
     </nav>
 
     <main class="pane">
-      <header class="top">
-        <div class="acct" id="acct">
-          <img id="face" class="face" alt="" hidden />
-          <div class="acctxt">
-            <span class="who">Not signed in</span>
-            <span class="sub" id="acctsub">Sign in to play</span>
-          </div>
-        </div>
-      </header>
-
       <!-- ══ PLAY ══ -->
-      <div class="scroll screen" data-screen="play">
-        <section class="hero">
-          <div class="glow" aria-hidden="true"></div>
-          <div class="herobody">
-            <p class="eyebrow" id="eyebrow">&nbsp;</p>
-            <div class="actionrow">
+      <div class="screen home" data-screen="play">
+        <div class="col-main">
+          <h1 class="greet">Welcome back</h1>
+
+          <!-- the launch card: the thing you play, with the thing itself on it -->
+          <section class="playcard">
+            <div class="pc-art"><img id="verart" alt="" /><span id="verfallback">26</span></div>
+            <div class="pc-body">
+              <h2 id="pctitle">Minecraft</h2>
+              <p id="pcmeta" class="sub">Reading Mojang&rsquo;s manifest&hellip;</p>
+            </div>
+            <div class="pc-act">
               <button id="go" class="cta" disabled>Loading</button>
-              <button id="second" class="ghost" type="button" hidden></button>
-              <div class="pwrap">
-                <button id="version" class="verpick" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Change version">
-                  <span id="vlabel">&mdash;</span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="butt" stroke-linejoin="miter" aria-hidden="true"><path d="M5 9 L12 16 L19 9"/></svg>
-                </button>
+              <button id="version" class="verpick" type="button" aria-haspopup="listbox"
+                      aria-expanded="false" aria-label="Change version">
+                <span id="vlabel">&mdash;</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="butt" stroke-linejoin="miter" aria-hidden="true"><path d="M5 9 L12 16 L19 9"/></svg>
+              </button>
+              <div class="pwrap"></div>
+            </div>
+          </section>
+
+          <div class="bar" id="bar" hidden>
+            <div class="barline"><span id="barfill"></span></div>
+            <p class="barmeta" id="barmeta"></p>
+          </div>
+          <p id="state" class="note"></p>
+
+          <section class="sect">
+            <div class="secthead">
+              <h2>Your mods</h2>
+              <button class="more" data-goto="mods" type="button">Manage</button>
+            </div>
+            <div class="modgrid" id="setrows"></div>
+          </section>
+
+          <section class="sect">
+            <div class="secthead"><h2>Versions</h2></div>
+            <div class="cards" id="cards"></div>
+          </section>
+
+          <p id="msg" class="msg" hidden></p>
+        </div>
+
+        <aside class="col-side">
+          <div class="sidecard">
+            <span class="sidelabel">Playing as</span>
+            <div class="acct">
+              <img id="face" class="face" alt="" hidden />
+              <div class="acctxt">
+                <span class="who">Not signed in</span>
+                <span class="sub" id="acctsub">Sign in to play online</span>
               </div>
             </div>
-            <p class="state" id="state">Reading Mojang&rsquo;s version manifest&hellip;</p>
-            <div class="bar" id="bar" hidden>
-              <div class="barline"><span id="barfill"></span></div>
-              <p class="barmeta" id="barmeta"></p>
-            </div>
           </div>
-        </section>
 
-        <section class="block">
-          <div class="blockhead">
-            <h2>The Vantage Set</h2>
-            <div class="headact">
-              <span class="tot" id="settot"></span>
-              <button id="setbtn" class="act primary" type="button" hidden></button>
-            </div>
+          <div class="sidecard">
+            <span class="sidelabel">On this machine</span>
+            <div class="stat"><b id="statbytes">&mdash;</b><span id="statfiles">&nbsp;</span></div>
           </div>
-          <div class="rows tight" id="setrows"></div>
-          <p class="foot" id="setfoot"></p>
-        </section>
 
-        <section class="block">
-          <div class="blockhead">
-            <h2>On this machine</h2>
-            <span class="tot" id="tot"></span>
+          <div class="sidecard" id="setcard">
+            <span class="sidelabel">The Vantage Set</span>
+            <div class="stat"><b id="settot">&mdash;</b><span id="setsub">&nbsp;</span></div>
+            <button id="setbtn" class="act primary wide" type="button" hidden></button>
           </div>
-          <div class="cards" id="cards"></div>
-        </section>
-        <p id="msg" class="msg" hidden></p>
+        </aside>
       </div>
 
       <!-- ══ MODS ══ -->

@@ -103,3 +103,30 @@ pub async fn versions(
         .json()
         .await?)
 }
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Project {
+    pub slug: String,
+    pub title: String,
+    #[serde(default)]
+    pub icon_url: Option<String>,
+    /// Modrinth's dominant colour for the icon, as a packed RGB int.
+    #[serde(default)]
+    pub color: Option<u32>,
+}
+
+/// Bulk project lookup. One request for the whole Set rather than five.
+pub async fn projects(http: &reqwest::Client, slugs: &[&str]) -> Result<Vec<Project>> {
+    let ids = format!(
+        "[{}]",
+        slugs.iter().map(|s| format!("\"{s}\"")).collect::<Vec<_>>().join(",")
+    );
+    Ok(http
+        .get(format!("{API}/projects"))
+        .query(&[("ids", ids.as_str())])
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?)
+}

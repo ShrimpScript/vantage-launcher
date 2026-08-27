@@ -28,6 +28,7 @@ type InstalledMod = { filename: string; bytes: number };
 type SetMember = {
   slug: string; title: string; role: string; version_number: string;
   version_type: string; filename: string; bytes: number; installed: boolean;
+  icon_url: string | null; color: number | null;
 };
 type SetView = {
   members: SetMember[]; total_bytes: number; applied: boolean;
@@ -53,6 +54,23 @@ function say(html: string, kind: "" | "ok" | "bad" = "") {
   m.className = `msg ${kind}`.trim();
   m.innerHTML = html;
   m.hidden = false;
+}
+
+/** The launch card's thumbnail is a real block texture from the selected version's jar. */
+async function setArt(id: string, installed: boolean) {
+  const img = $<HTMLImageElement>("verart");
+  const fb = $("verfallback");
+  fb.textContent = id.split(".")[0] ?? "MC";
+  if (!installed) { img.hidden = true; fb.hidden = false; return; }
+  try {
+    const uri = await invoke<string>("texture", { id, name: "grass_block_side" });
+    img.src = uri;
+    img.hidden = false;
+    fb.hidden = true;
+  } catch {
+    img.hidden = true;
+    fb.hidden = false;
+  }
 }
 
 /* ── the account face: the ONE place a player appears (DESIGN.md §7) ──────
@@ -103,10 +121,9 @@ function renderCards(store: StoreInfo) {
   frag.append(add);
 
   cards.replaceChildren(frag);
-  $("tot").textContent = store.files
-    ? `${gb(store.bytes)} · ${n(store.files)} files`
-    : "nothing installed yet";
-  $("tot").title = store.root;
+  $("statbytes").textContent = store.files ? gb(store.bytes) : "Empty";
+  $("statfiles").textContent = store.files ? `${n(store.files)} files` : "nothing installed";
+  $("statfiles").title = store.root;
 }
 
 async function refreshStore() {
@@ -122,26 +139,21 @@ async function inspect(id: string) {
     const i = await invoke<Inspection>("inspect", { id });
     if (mine !== token) return;
 
-    const second = $<HTMLButtonElement>("second");
+    $("pctitle").textContent = `Minecraft ${i.id}`;
     if (i.installed) {
-      go.textContent = `Play ${i.id}`;
+      go.textContent = "Play";
       go.disabled = false;
       mode = "play";
-      second.hidden = false;
-      second.textContent = "Verify files";
-      $("eyebrow").innerHTML = `<span class="ready">Ready</span> &middot; Java ${i.java?.majorVersion ?? "—"} &middot; ${n(i.libs_applicable)} libraries`;
-      $("state").innerHTML =
-        `Offline session &mdash; singleplayer only. Online play needs Microsoft sign-in, and that API permission is still pending.`;
+      $("pcmeta").textContent = "Ready to play";
+      $("state").textContent = "Offline session — singleplayer only until you sign in.";
     } else {
       go.textContent = "Install";
       go.disabled = false;
       mode = "install";
-      second.hidden = true;
-      $("eyebrow").innerHTML = `Not installed &middot; Java ${i.java?.majorVersion ?? "—"}`;
-      $("state").innerHTML =
-        `<span class="n">${gb(i.client_bytes + i.asset_bytes)}</span> to fetch &middot; ` +
-        `<span class="n">${n(i.asset_objects + i.libs_applicable + 1)}</span> files`;
+      $("pcmeta").textContent = `${gb(i.client_bytes + i.asset_bytes)} to download`;
+      $("state").textContent = "";
     }
+    await setArt(id, i.installed);
     await setFace(id, i.installed);
     void refreshSet();
   } catch (e) {
@@ -208,12 +220,8 @@ go.addEventListener("click", async () => {
   go.disabled = true;
   go.textContent = "Starting…";
   try {
-    const l = await invoke<Launched>("launch_game", { id, name: "Player", memoryMb: 4096 });
-    say(
-      `<b>${id} is running.</b> pid ${l.pid}, ${l.classpath_entries} classpath entries, ` +
-        `on the runtime Vantage provisioned. Offline session &mdash; singleplayer only until sign-in.`,
-      "ok",
-    );
+    await invoke<Launched>("launch_game", { id, name: "Player", memoryMb: 4096 });
+    say(`<b>Minecraft ${id} is running.</b>`, "ok");
   } catch (e) {
     say(`Could not start the game: ${e}`, "bad");
   } finally {
@@ -222,7 +230,7 @@ go.addEventListener("click", async () => {
   }
 });
 
-$("second").addEventListener("click", () => void runInstall(selected.value, true));
+
 
 
 /* ── screen switching ────────────────────────────────────────────────────── */
@@ -413,53 +421,54 @@ rm.addEventListener("click", () => {
 /* ── the Vantage Set ─────────────────────────────────────────────────────
    Bundled by default, openable all the way down. Resolved live from Modrinth and
    pinned by hash; the same data is exported as a real .mrpack so nobody is locked in. */
-const TICK = `<svg class="mark2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" aria-hidden="true"><path d="M3.5 12 L9.5 18.5 L20.5 4.5"/></svg>`;
-const DOT = `<svg class="mark2 off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/></svg>`;
 
-let setBusy = false;
 
 async function refreshSet() {
-  const rows = $("setrows");
+  const grid = $("setrows");
   const btn = $<HTMLButtonElement>("setbtn");
-  rows.replaceChildren(...Array.from({ length: 5 }, () => {
+  grid.replaceChildren(...Array.from({ length: 5 }, () => {
     const s = document.createElement("div");
     s.className = "skel";
-    s.style.height = "44px";
+    s.style.height = "116px";
     return s;
   }));
   try {
     const v = await invoke<SetView>("set_status", { gameVersion: selected.value });
-    rows.replaceChildren(...v.members.map((m) => {
-      const el = document.createElement("div");
-      el.className = "setline";
-      const kind = m.version_type === "release" ? "" : `<span class="kind">${m.version_type}</span>`;
-      el.innerHTML =
-        `<span class="nm">${m.title}</span>` +
-        `<span class="role">${m.role}</span>` +
-        `<span class="ver">${m.version_number}</span>` +
-        kind + (m.installed ? TICK : DOT);
-      return el;
-    }));
-    $("settot").textContent =
-      `${v.members.length} pinned · ${(v.total_bytes / 1048576).toFixed(1)} MB · Fabric ${v.loader}`;
+    grid.replaceChildren(
+      ...v.members.map((m) => {
+        const el = document.createElement("button");
+        el.className = "modcard";
+        el.type = "button";
+        el.title = `${m.title} ${m.version_number}`;
+        const icon = m.icon_url
+          ? `<img class="mi" src="${m.icon_url}" alt="" loading="lazy" />`
+          : `<div class="mi"></div>`;
+        el.innerHTML =
+          `<span class="dot${m.installed ? "" : " off"}"></span>` + icon +
+          `<span class="mn">${m.title}</span><span class="mr">${m.role}</span>`;
+        el.addEventListener("click", () => goto("mods"));
+        return el;
+      }),
+    );
+    const on = v.members.filter((m) => m.installed).length;
+    if (mode === "play") {
+      $("pcmeta").textContent = `Fabric ${v.loader} · ${on} mod${on === 1 ? "" : "s"}`;
+    }
+    $("settot").textContent = v.applied ? "Applied" : `${v.members.length} pinned`;
+    $("setsub").textContent = `${(v.total_bytes / 1048576).toFixed(1)} MB · Fabric ${v.loader}`;
     btn.hidden = false;
-    btn.textContent = v.applied ? "Remove" : "Apply the Set";
-    btn.className = v.applied ? "act quiet" : "act primary";
-    btn.disabled = setBusy;
-    $("setfoot").innerHTML = v.applied
-      ? `Installed from each author's official Modrinth release, unmodified. Exported as <code>vantage-set-${selected.value}.mrpack</code> — unzip it, check every hash, or import it into Prism.`
-      : `Five mods, hash-pinned. Fetched from each author's official Modrinth release, never repackaged by us.`;
+    btn.textContent = v.applied ? "Remove" : "Apply";
+    btn.className = v.applied ? "act quiet wide" : "act primary wide";
+
   } catch (e) {
-    rows.replaceChildren();
-    $("settot").textContent = "";
-    $("setfoot").textContent = `Could not resolve the Set for ${selected.value}: ${e}`;
+    grid.replaceChildren();
+    $("setsub").textContent = `Could not resolve: ${e}`;
   }
 }
 
 $("setbtn").addEventListener("click", async () => {
   const btn = $<HTMLButtonElement>("setbtn");
   const removing = btn.textContent === "Remove";
-  setBusy = true;
   btn.disabled = true;
   btn.textContent = removing ? "Removing…" : "Applying…";
   try {
@@ -477,7 +486,6 @@ $("setbtn").addEventListener("click", async () => {
   } catch (e) {
     say(`${removing ? "Remove" : "Apply"} failed: ${e}`, "bad");
   } finally {
-    setBusy = false;
     await refreshSet();
     await refreshStore();
   }
