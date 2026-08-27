@@ -18,6 +18,9 @@
       <button data-goto="mods" title="Mods">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="butt" stroke-linejoin="miter" aria-hidden="true"><path d="M12 2.5 L21 7 L12 11.5 L3 7 Z"/><path d="M3 12 L12 16.5 L21 12"/><path d="M3 17 L12 21.5 L21 17"/></svg>
       </button>
+      <button data-goto="packs" title="Packs">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="butt" stroke-linejoin="miter" aria-hidden="true"><path d="M12 2.5 L21 7.75 V16.25 L12 21.5 L3 16.25 V7.75 Z"/><path d="M3 7.75 L12 13 L21 7.75"/><path d="M12 13 V21.5"/></svg>
+      </button>
       <button data-goto="settings" title="Settings" class="last">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="butt" stroke-linejoin="miter" aria-hidden="true"><path d="M3 6.5 H21 M3 12 H21 M3 17.5 H21"/><path d="M8 4 V9 M15.5 9.5 V14.5 M6.5 15 V20"/></svg>
       </button>
@@ -116,6 +119,34 @@
           <div class="rows" id="installed"></div>
         </section>
         <p id="modmsg" class="msg" hidden></p>
+      </div>
+
+      <!-- ══ PACKS ══ -->
+      <div class="screen" data-screen="packs" hidden>
+        <section class="block">
+          <div class="blockhead">
+            <h2>Packs</h2>
+            <span class="tot" id="packctx"></span>
+          </div>
+          <div class="tabs" role="tablist">
+            <button class="tab" role="tab" aria-selected="true" data-kind="resourcepack">Resource packs</button>
+            <button class="tab" role="tab" aria-selected="false" data-kind="shader">Shaders</button>
+          </div>
+          <div class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="butt" stroke-linejoin="miter" aria-hidden="true"><path d="M3.5 3.5 H15.5 V15.5 H3.5 Z"/><path d="M15.5 15.5 L21 21"/></svg>
+            <input id="pq" type="search" placeholder="Search Modrinth&hellip;" autocomplete="off" spellcheck="false" aria-label="Search Modrinth for packs" />
+          </div>
+          <div class="rows" id="packresults"></div>
+        </section>
+
+        <section class="block">
+          <div class="blockhead">
+            <h2>Installed</h2>
+            <span class="tot" id="packtot"></span>
+          </div>
+          <div class="rows" id="packinstalled"></div>
+        </section>
+        <p id="packmsg" class="msg" hidden></p>
       </div>
 
       <!-- ══ SETTINGS ══ -->

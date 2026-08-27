@@ -249,12 +249,16 @@ function goto(name: string) {
     // a search screen that needs a click before you can type is a search screen with a bug
     requestAnimationFrame(() => q.focus());
   }
+  if (name === "packs") {
+    void refreshPacks();
+    requestAnimationFrame(() => pq.focus());
+  }
   if (name === "settings") void refreshSettings();
 }
 railBtns.forEach((b) => b.addEventListener("click", () => goto(b.dataset.goto!)));
 
 // Keyboard is the primary path (DESIGN.md §7): every screen is one chord away.
-const ORDER = ["play", "mods", "settings"];
+const ORDER = ["play", "mods", "packs", "settings"];
 window.addEventListener("keydown", (e) => {
   if (!e.ctrlKey && !e.metaKey) return;
   const i = Number(e.key) - 1;
@@ -269,7 +273,7 @@ const q = $<HTMLInputElement>("q");
 let searchToken = 0;
 let searchTimer: number | undefined;
 
-function modRow(h: Hit, installedNames: Set<string>): HTMLElement {
+function modRow(h: Hit, owned: string[]): HTMLElement {
   const row = document.createElement("div");
   row.className = "row";
   const icon = h.icon_url
@@ -283,7 +287,7 @@ function modRow(h: Hit, installedNames: Set<string>): HTMLElement {
     `<span class="by">${h.author} · <span class="dl">${h.downloads.toLocaleString()}</span> downloads</span>` +
     `</div>`;
   const btn = document.createElement("button");
-  const already = [...installedNames].some((f) => f.toLowerCase().includes(h.slug.replace(/-/g, "")));
+  const already = owned.includes(h.project_id) || owned.includes(h.slug);
   btn.className = already ? "act" : "act primary";
   btn.textContent = already ? "Added" : "Add";
   btn.disabled = already;
@@ -323,12 +327,11 @@ async function runSearch(term: string) {
     const s = document.createElement("div"); s.className = "skel"; return s;
   }));
   try {
-    const [hits, installed] = await Promise.all([
+    const [hits, ownedMods] = await Promise.all([
       invoke<Hit[]>("mod_search", { query: term, gameVersion: selected.value }),
-      invoke<InstalledMod[]>("mods_installed"),
+      invoke<string[]>("installed_ids", { kind: "mod" }),
     ]);
     if (mine !== searchToken) return;
-    const names = new Set(installed.map((m) => m.filename.toLowerCase()));
     if (!hits.length) {
       out.replaceChildren(Object.assign(document.createElement("p"), {
         className: "empty",
@@ -336,7 +339,7 @@ async function runSearch(term: string) {
       }));
       return;
     }
-    out.replaceChildren(...hits.map((h) => modRow(h, names)));
+    out.replaceChildren(...hits.map((h) => modRow(h, ownedMods)));
   } catch (e) {
     if (mine !== searchToken) return;
     out.replaceChildren();
@@ -492,3 +495,133 @@ $("setbtn").addEventListener("click", async () => {
 });
 
 void boot();
+
+
+/* ── packs: resource packs and shaders ───────────────────────────────────
+   Same rows as mods, but a different Modrinth project type — and packs publish
+   against the `minecraft` loader, so they must not be filtered as Fabric mods. */
+type InstalledPack = { filename: string; bytes: number };
+type PackInstalled = { filename: string; bytes: number; version_number: string };
+
+const pq = $<HTMLInputElement>("pq");
+let packKind: "resourcepack" | "shader" = "resourcepack";
+let packToken = 0;
+let packTimer: number | undefined;
+
+function packSay(html: string, kind: "" | "ok" | "bad" = "") {
+  const m = $("packmsg");
+  m.className = `msg ${kind}`.trim();
+  m.innerHTML = html;
+  m.hidden = false;
+}
+
+document.querySelectorAll<HTMLButtonElement>(".tab[data-kind]").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab[data-kind]").forEach((t2) =>
+      t2.setAttribute("aria-selected", String(t2 === tab)),
+    );
+    packKind = tab.dataset.kind as typeof packKind;
+    void runPackSearch(pq.value);
+    void refreshPacks();
+  });
+});
+
+async function runPackSearch(term: string) {
+  const mine = ++packToken;
+  const out = $("packresults");
+  out.replaceChildren(...Array.from({ length: 4 }, () => {
+    const s = document.createElement("div");
+    s.className = "skel";
+    return s;
+  }));
+  try {
+    const [hits, owned] = await Promise.all([
+      invoke<Hit[]>("pack_search", { query: term, gameVersion: selected.value, kind: packKind }),
+      invoke<string[]>("installed_ids", { kind: packKind }),
+    ]);
+    if (mine !== packToken) return;
+    if (!hits.length) {
+      out.replaceChildren(Object.assign(document.createElement("p"), {
+        className: "empty",
+        textContent: `Nothing matches “${term}” for ${selected.value}.`,
+      }));
+      return;
+    }
+    out.replaceChildren(...hits.map((h) => {
+      const row = document.createElement("div");
+      row.className = "row";
+      const icon = h.icon_url
+        ? `<img class="ic" src="${h.icon_url}" alt="" loading="lazy" />`
+        : `<div class="ic"></div>`;
+      row.innerHTML = icon +
+        `<div class="body"><span class="t">${h.title}</span>` +
+        `<span class="d">${h.description}</span>` +
+        `<span class="by">${h.author} · <span class="dl">${h.downloads.toLocaleString()}</span> downloads</span></div>`;
+      const btn = document.createElement("button");
+      const already = owned.includes(h.project_id) || owned.includes(h.slug);
+      btn.className = already ? "act" : "act primary";
+      btn.textContent = already ? "Added" : "Add";
+      btn.disabled = already;
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        btn.textContent = "Adding…";
+        try {
+          const r = await invoke<PackInstalled>("pack_install", {
+            project: h.project_id, gameVersion: selected.value, kind: packKind,
+          });
+          btn.className = "act";
+          btn.textContent = "Added";
+          packSay(`<b>${h.title} ${r.version_number}</b> added — ${(r.bytes / 1048576).toFixed(1)} MB, stored once and linked into your profile.`, "ok");
+          await refreshPacks();
+        } catch (e) {
+          btn.disabled = false;
+          btn.textContent = "Add";
+          packSay(`Could not add ${h.title}: ${e}`, "bad");
+        }
+      });
+      row.append(btn);
+      return row;
+    }));
+  } catch (e) {
+    if (mine !== packToken) return;
+    out.replaceChildren();
+    packSay(`Search failed: ${e}`, "bad");
+  }
+}
+
+pq.addEventListener("input", () => {
+  window.clearTimeout(packTimer);
+  packTimer = window.setTimeout(() => void runPackSearch(pq.value), 220);
+});
+
+async function refreshPacks() {
+  const label = packKind === "shader" ? "Shaders" : "Resource packs";
+  $("packctx").textContent = `${label} · ${selected.value}`;
+  const list = await invoke<InstalledPack[]>("packs_installed", { kind: packKind });
+  const el = $("packinstalled");
+  $("packtot").textContent = list.length
+    ? `${list.length} · ${(list.reduce((a, p) => a + p.bytes, 0) / 1048576).toFixed(1)} MB`
+    : "";
+  if (!list.length) {
+    el.replaceChildren(Object.assign(document.createElement("p"), {
+      className: "empty",
+      textContent: `No ${label.toLowerCase()} yet. Search above — each one is stored once and hard-linked into the profile, so the same pack in several profiles costs one copy.`,
+    }));
+    return;
+  }
+  el.replaceChildren(...list.map((p) => {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<div class="ic"></div><div class="body"><span class="t">${p.filename}</span>` +
+      `<span class="by"><span class="dl">${(p.bytes / 1048576).toFixed(1)}</span> MB</span></div>`;
+    const rm = document.createElement("button");
+    rm.className = "act quiet";
+    rm.textContent = "Remove";
+    rm.addEventListener("click", async () => {
+      try { await invoke("pack_remove", { kind: packKind, filename: p.filename }); await refreshPacks(); }
+      catch (e) { packSay(`Could not remove: ${e}`, "bad"); }
+    });
+    row.append(rm);
+    return row;
+  }));
+}

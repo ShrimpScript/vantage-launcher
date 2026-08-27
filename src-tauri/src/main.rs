@@ -29,6 +29,10 @@ fn main() {
         vantage_launcher_lib::headless_launch(&args[2], name);
         return;
     }
+    if args.len() >= 5 && args[1] == "--pack" {
+        vantage_launcher_lib::headless_pack(&args[2], &args[3], &args[4]);
+        return;
+    }
     if args.len() >= 3 && args[1] == "--set" {
         vantage_launcher_lib::headless_set(&args[2]);
         return;

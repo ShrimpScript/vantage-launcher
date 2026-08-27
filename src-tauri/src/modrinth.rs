@@ -66,16 +66,57 @@ impl Ver {
     }
 }
 
-/// Fabric mods compatible with one game version, most-downloaded first.
+/// What we are looking for. Resource packs and shaders are not Fabric mods and must not be
+/// filtered as if they were — packs publish against the `minecraft` loader.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    Mod,
+    ResourcePack,
+    Shader,
+}
+
+impl Kind {
+    pub fn project_type(self) -> &'static str {
+        match self {
+            Kind::Mod => "mod",
+            Kind::ResourcePack => "resourcepack",
+            Kind::Shader => "shader",
+        }
+    }
+    /// Only mods get a loader facet; adding one to a pack search returns nothing.
+    pub fn loader_facet(self) -> Option<&'static str> {
+        match self {
+            Kind::Mod => Some("fabric"),
+            _ => None,
+        }
+    }
+    /// Where the game expects this kind to live inside the profile.
+    pub fn profile_dir(self) -> &'static str {
+        match self {
+            Kind::Mod => "mods",
+            Kind::ResourcePack => "resourcepacks",
+            Kind::Shader => "shaderpacks",
+        }
+    }
+}
+
+/// Projects of one kind compatible with a game version, most-downloaded first.
 pub async fn search(
     http: &reqwest::Client,
     query: &str,
     game_version: &str,
+    kind: Kind,
     limit: u32,
 ) -> Result<Vec<Hit>> {
-    let facets = format!(
-        r#"[["project_type:mod"],["versions:{game_version}"],["categories:fabric"]]"#
+    let mut facets = format!(
+        r#"[["project_type:{}"],["versions:{game_version}"]"#,
+        kind.project_type()
     );
+    if let Some(loader) = kind.loader_facet() {
+        facets.push_str(&format!(r#",["categories:{loader}"]"#));
+    }
+    facets.push(']');
     let r: SearchResponse = http
         .get(format!("{API}/search"))
         .query(&[("query", query), ("facets", &facets), ("limit", &limit.to_string())])
@@ -87,21 +128,31 @@ pub async fn search(
     Ok(r.hits)
 }
 
-/// Every published build of one project for this game version and loader.
+/// Every published build of one project for this game version. Mods are additionally
+/// filtered to Fabric; packs are not, because they do not publish against a mod loader.
+pub async fn versions_of(
+    http: &reqwest::Client,
+    project: &str,
+    game_version: &str,
+    kind: Kind,
+) -> Result<Vec<Ver>> {
+    let gv = format!(r#"["{game_version}"]"#);
+    let mut req = http
+        .get(format!("{API}/project/{project}/version"))
+        .query(&[("game_versions", gv.as_str())]);
+    if kind == Kind::Mod {
+        req = req.query(&[("loaders", r#"["fabric"]"#)]);
+    }
+    Ok(req.send().await?.error_for_status()?.json().await?)
+}
+
+/// Fabric mods, the common case.
 pub async fn versions(
     http: &reqwest::Client,
     project: &str,
     game_version: &str,
 ) -> Result<Vec<Ver>> {
-    let gv = format!(r#"["{game_version}"]"#);
-    Ok(http
-        .get(format!("{API}/project/{project}/version"))
-        .query(&[("game_versions", gv.as_str()), ("loaders", r#"["fabric"]"#)])
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?)
+    versions_of(http, project, game_version, Kind::Mod).await
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

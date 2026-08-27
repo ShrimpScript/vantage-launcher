@@ -49,7 +49,17 @@ impl Store {
 
     /// A profile's mods directory. One implicit "main" profile until profiles ship.
     pub fn profile_mods(&self, profile: &str) -> PathBuf {
-        self.root.join("profiles").join(profile).join("mods")
+        self.profile_sub(profile, "mods")
+    }
+
+    pub fn profile_sub(&self, profile: &str, sub: &str) -> PathBuf {
+        self.root.join("profiles").join(profile).join(sub)
+    }
+
+    /// Content-addressed blob for packs, so the same 400 MB pack enabled in three profiles
+    /// costs one copy on disk (LAUNCHER.md §3.3).
+    pub fn pack_blob(&self, sha1: &str) -> PathBuf {
+        self.root.join("packs").join(&sha1[..2]).join(sha1)
     }
 
     /// Recursive size + file count. Used by the UI to show what the store actually costs.

@@ -4,6 +4,7 @@ mod java;
 mod launch;
 mod jar;
 mod auth;
+mod manifest;
 mod meta;
 mod modrinth;
 mod pack;
@@ -171,7 +172,127 @@ async fn mod_search(
     query: String,
     game_version: String,
 ) -> Result<Vec<modrinth::Hit>> {
-    modrinth::search(&state.http, &query, &game_version, 20).await
+    modrinth::search(&state.http, &query, &game_version, modrinth::Kind::Mod, 20).await
+}
+
+/* ── resource packs and shaders ──────────────────────────────────────────── */
+
+fn kind_of(s: &str) -> Result<modrinth::Kind> {
+    match s {
+        "resourcepack" => Ok(modrinth::Kind::ResourcePack),
+        "shader" => Ok(modrinth::Kind::Shader),
+        "mod" => Ok(modrinth::Kind::Mod),
+        other => Err(Error::Other(format!("unknown kind: {other}"))),
+    }
+}
+
+#[tauri::command]
+async fn pack_search(
+    state: State<'_, AppState>,
+    query: String,
+    game_version: String,
+    kind: String,
+) -> Result<Vec<modrinth::Hit>> {
+    let k = kind_of(&kind)?;
+    // An empty query on a pack browse should show the popular ones, not nothing.
+    modrinth::search(&state.http, &query, &game_version, k, 20).await
+}
+
+#[derive(Serialize)]
+pub struct PackInstalled {
+    filename: String,
+    bytes: u64,
+    version_number: String,
+}
+
+/// Download once into the content-addressed pack store, then hard-link it into the profile.
+/// The same pack enabled in several profiles costs one copy on disk.
+#[tauri::command]
+async fn pack_install(
+    state: State<'_, AppState>,
+    project: String,
+    game_version: String,
+    kind: String,
+) -> Result<PackInstalled> {
+    let k = kind_of(&kind)?;
+    let versions = modrinth::versions_of(&state.http, &project, &game_version, k).await?;
+    let ver = versions.into_iter().next().ok_or_else(|| {
+        Error::Other(format!("{project} has no build for {game_version}"))
+    })?;
+    let file = ver
+        .primary()
+        .ok_or_else(|| Error::Other("no downloadable file".into()))?
+        .clone();
+
+    let blob = state.store.pack_blob(&file.hashes.sha1);
+    net::fetch_all(
+        &state.http,
+        vec![net::Item {
+            url: file.url.clone(),
+            dest: blob.clone(),
+            sha1: Some(file.hashes.sha1.clone()),
+            size: file.size,
+        }],
+        Arc::new(net::Counters::default()),
+    )
+    .await?;
+
+    let dir = state.store.profile_sub("main", k.profile_dir());
+    std::fs::create_dir_all(&dir)?;
+    let link = dir.join(&file.filename);
+    let _ = std::fs::remove_file(&link);
+    // Hard link where the filesystem allows it; fall back to a copy across devices.
+    if std::fs::hard_link(&blob, &link).is_err() {
+        std::fs::copy(&blob, &link)?;
+    }
+
+    manifest::record(&state.store, "main", &kind, &project, &file.filename)?;
+    Ok(PackInstalled {
+        filename: file.filename,
+        bytes: file.size,
+        version_number: ver.version_number,
+    })
+}
+
+#[derive(Serialize)]
+pub struct InstalledPack {
+    filename: String,
+    bytes: u64,
+}
+
+#[tauri::command]
+fn packs_installed(state: State<'_, AppState>, kind: String) -> Result<Vec<InstalledPack>> {
+    let k = kind_of(&kind)?;
+    let dir = state.store.profile_sub("main", k.profile_dir());
+    let Ok(rd) = std::fs::read_dir(&dir) else { return Ok(Vec::new()) };
+    let mut out: Vec<InstalledPack> = rd
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".zip") { return None; }
+            Some(InstalledPack { filename: name, bytes: e.metadata().ok()?.len() })
+        })
+        .collect();
+    out.sort_by(|a, b| a.filename.cmp(&b.filename));
+    Ok(out)
+}
+
+/// Exactly which project ids are installed for this kind. No slug-versus-filename guessing.
+#[tauri::command]
+fn installed_ids(state: State<'_, AppState>, kind: String) -> Vec<String> {
+    manifest::installed_ids(&state.store, "main", &kind)
+}
+
+#[tauri::command]
+fn pack_remove(state: State<'_, AppState>, kind: String, filename: String) -> Result<()> {
+    let k = kind_of(&kind)?;
+    let leaf = std::path::Path::new(&filename)
+        .file_name()
+        .ok_or_else(|| Error::Other("not a file name".into()))?;
+    // Only the profile link goes; the blob stays for other profiles.
+    std::fs::remove_file(state.store.profile_sub("main", k.profile_dir()).join(leaf))?;
+    manifest::forget_file(&state.store, "main", &kind, &filename)?;
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -238,6 +359,7 @@ async fn mod_install(
     )
     .await?;
 
+    manifest::record(&state.store, "main", "mod", &project, &file.filename)?;
     Ok(ModInstalled {
         filename: file.filename,
         version_number: ver.version_number,
@@ -253,6 +375,7 @@ fn mod_remove(state: State<'_, AppState>, filename: String) -> Result<()> {
         .file_name()
         .ok_or_else(|| Error::Other("not a file name".into()))?;
     std::fs::remove_file(state.store.profile_mods("main").join(leaf))?;
+    manifest::forget_file(&state.store, "main", "mod", &filename)?;
     Ok(())
 }
 
@@ -431,7 +554,8 @@ pub fn run() {
             versions, inspect, install, store_info, texture, default_skin, block_list,
             mod_search, mod_install, mods_installed, mod_remove,
             set_status, set_apply, set_remove,
-            auth_status, sign_in, launch_game
+            auth_status, sign_in, launch_game,
+            pack_search, pack_install, packs_installed, pack_remove, installed_ids
         ])
         .run(tauri::generate_context!())
         .expect("error while running Vantage");
@@ -494,7 +618,7 @@ pub fn headless_mods(game_version: &str, query: &str) {
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
     match rt.block_on(async {
         let http = net::client()?;
-        modrinth::search(&http, query, game_version, 8).await
+        modrinth::search(&http, query, game_version, modrinth::Kind::Mod, 8).await
     }) {
         Ok(hits) => {
             println!("{} results for \"{query}\" on Fabric {game_version}:", hits.len());
@@ -645,4 +769,43 @@ pub fn headless_launch(id: &str, name: &str) {
     }
     println!("(still running — close the game window to exit)");
     let _ = child.wait();
+}
+
+/// `--pack <game_version> <kind> <project>`: install a resource pack or shader headlessly
+/// and report where the blob and the profile link ended up.
+pub fn headless_pack(game_version: &str, kind: &str, project: &str) {
+    let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+    let k = match kind {
+        "resourcepack" => modrinth::Kind::ResourcePack,
+        "shader" => modrinth::Kind::Shader,
+        _ => { eprintln!("kind must be resourcepack or shader"); std::process::exit(1); }
+    };
+    match rt.block_on(async {
+        let http = net::client()?;
+        let store = store::Store::discover()?;
+        let versions = modrinth::versions_of(&http, project, game_version, k).await?;
+        let ver = versions.into_iter().next()
+            .ok_or_else(|| Error::Other(format!("{project} has no build for {game_version}")))?;
+        let file = ver.primary().ok_or_else(|| Error::Other("no file".into()))?.clone();
+        let blob = store.pack_blob(&file.hashes.sha1);
+        net::fetch_all(&http, vec![net::Item {
+            url: file.url.clone(), dest: blob.clone(),
+            sha1: Some(file.hashes.sha1.clone()), size: file.size,
+        }], Arc::new(net::Counters::default())).await?;
+        let dir = store.profile_sub("main", k.profile_dir());
+        std::fs::create_dir_all(&dir)?;
+        let link = dir.join(&file.filename);
+        let _ = std::fs::remove_file(&link);
+        let linked = std::fs::hard_link(&blob, &link).is_ok();
+        if !linked { std::fs::copy(&blob, &link)?; }
+        manifest::record(&store, "main", kind, project, &file.filename)?;
+        Ok::<_, Error>((ver.version_number, file, blob, link, linked))
+    }) {
+        Ok((num, file, blob, link, linked)) => {
+            println!("{project} {num} — {} ({:.2} MB)", file.filename, file.size as f64 / 1048576.0);
+            println!("  blob {}", blob.display());
+            println!("  link {}  [{}]", link.display(), if linked { "hard link" } else { "copy" });
+        }
+        Err(e) => { eprintln!("pack install failed: {e}"); std::process::exit(1); }
+    }
 }
