@@ -10,7 +10,7 @@
   font-weight:100 800;font-stretch:75% 112.5%;font-display:block}
 
 :root{
-  --ground:#0B0D12; --surface:#141821; --raised:#1C222E; --edge:#262D3A;
+  --rail:#07080B; --ground:#0B0D12; --surface:#141821; --raised:#1C222E; --edge:#262D3A;
   --text:#EDF0F5; --muted:#9AA4B4; --faint:#6B7484;
   --amber:#FFB020; --steel:#6E9CC4;
   --ok:#5FCF80; --warn:#E8B54A; --bad:#F26D6D;
@@ -38,7 +38,7 @@ h1,h2,p{margin:0}
 .app{display:grid; grid-template-columns:64px 1fr; height:100vh}
 
 /* ── rail: no border, separated by ground vs surface ── */
-.rail{background:var(--ground); display:flex; flex-direction:column; align-items:center;
+.rail{background:var(--rail); display:flex; flex-direction:column; align-items:center;
   gap:6px; padding:18px 0}
 .rail .mark{color:var(--amber); margin-bottom:20px}
 .rail button{width:42px; height:42px; display:grid; place-items:center; color:var(--faint);
@@ -47,7 +47,7 @@ h1,h2,p{margin:0}
 .rail button:hover{color:var(--muted); background:var(--surface)}
 .rail button.on{color:var(--text); background:var(--surface)}
 
-.pane{display:flex; flex-direction:column; min-width:0; background:var(--surface)}
+.pane{display:flex; flex-direction:column; min-width:0; background:var(--ground)}
 .screen{overflow-y:auto; flex:1; min-height:0; padding:0 32px 40px;
   display:flex; flex-direction:column; gap:32px}
 .rail .last{margin-top:auto}
@@ -270,6 +270,13 @@ html.calm *{animation:none!important; transition:none!important}
 .sub{font-size:14px; color:var(--muted)}
 .pc-act{display:flex; align-items:center; gap:10px; flex:0 0 auto; position:relative}
 .note{font-size:13px; color:var(--faint); margin-top:-16px}
+
+/* section headers — shared by every screen */
+.blockhead{display:flex; align-items:baseline; justify-content:space-between; gap:16px;
+  flex-wrap:wrap; min-width:0}
+.blockhead h2{font-family:var(--display); font-variation-settings:'wdth' 112,'wght' 700;
+  font-size:24px; letter-spacing:-.015em}
+.tot{font-size:13px; color:var(--faint); font-variant-numeric:tabular-nums}
 
 /* sections */
 .sect{display:flex; flex-direction:column; gap:14px; min-width:0}
