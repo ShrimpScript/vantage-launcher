@@ -6,7 +6,7 @@
 //! give it), so there is no unzip step, just a directory to point at.
 
 use crate::error::{Error, Result};
-use crate::{java, meta, store::Store};
+use crate::{fabric, java, meta, store::Store};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -42,6 +42,9 @@ impl Session {
 pub struct Plan {
     pub java: String,
     pub main_class: String,
+    /// Which loader actually starts the game. Mods only load under Fabric.
+    pub loader: String,
+    pub mods: usize,
     pub classpath_entries: usize,
     pub jvm_args: Vec<String>,
     pub game_args: Vec<String>,
@@ -131,12 +134,29 @@ pub async fn plan(
     let detail: meta::VersionDetail = serde_json::from_slice(&raw)?;
     let json: serde_json::Value = serde_json::from_slice(&raw)?;
 
+    // Mods live in the profile, but vanilla ignores them entirely. If any are present the
+    // game must start through Fabric or the whole mod feature is a no-op.
+    let game_dir = store.root.join("profiles").join("main");
+    let mods_dir = game_dir.join("mods");
+    let mod_count = std::fs::read_dir(&mods_dir)
+        .map(|rd| rd.flatten().filter(|e| e.file_name().to_string_lossy().ends_with(".jar")).count())
+        .unwrap_or(0);
+
     let component = detail
         .java_version
         .as_ref()
         .map(|j| j.component.clone())
         .unwrap_or_else(|| "jre-legacy".into());
     let java_bin = java::provision(http, store, &component).await?;
+
+    let fab = if mod_count > 0 {
+        let loader = fabric::latest_loader(http, id).await?;
+        let p = fabric::profile(http, id, &loader).await?;
+        let libs = fabric::install(http, store, &p).await?;
+        Some((loader, p, libs))
+    } else {
+        None
+    };
 
     // Classpath: every applicable library, then the client jar last.
     let mut cp: Vec<String> = Vec::new();
@@ -148,9 +168,14 @@ pub async fn plan(
             cp.push(store.library(path).display().to_string());
         }
     }
+    if let Some((_, _, libs)) = &fab {
+        // Fabric's libraries go ahead of the client jar, as its own launcher expects.
+        for p in libs {
+            cp.push(p.display().to_string());
+        }
+    }
     cp.push(store.client_jar(id).display().to_string());
 
-    let game_dir = store.root.join("profiles").join("main");
     let natives = game_dir.join("natives");
     tokio::fs::create_dir_all(&natives).await?;
     tokio::fs::create_dir_all(game_dir.join("mods")).await?;
@@ -190,13 +215,30 @@ pub async fn plan(
     ];
     jvm.extend(fill(&collect(jvm_raw), &vars));
 
+    // Fabric contributes its own JVM arguments (notably -DFabricMcEmu) and replaces main.
+    let (main_class, loader) = match &fab {
+        Some((ver, p, _)) => {
+            jvm.extend(fill(&p.arguments.jvm, &vars));
+            (p.main_class.clone(), format!("Fabric {ver}"))
+        }
+        None => (detail.main_class.clone(), "vanilla".to_string()),
+    };
+
     Ok((
         Plan {
             java: java_bin.display().to_string(),
-            main_class: detail.main_class.clone(),
+            main_class,
+            loader,
+            mods: mod_count,
             classpath_entries: cp.len(),
             jvm_args: jvm,
-            game_args: fill(&collect(game_raw), &vars),
+            game_args: {
+                let mut g = fill(&collect(game_raw), &vars);
+                if let Some((_, p, _)) = &fab {
+                    g.extend(fill(&p.arguments.game, &vars));
+                }
+                g
+            },
             game_dir: game_dir.display().to_string(),
         },
         game_dir,

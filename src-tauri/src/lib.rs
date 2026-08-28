@@ -1,4 +1,5 @@
 mod error;
+mod fabric;
 mod install;
 mod java;
 mod launch;
@@ -560,6 +561,8 @@ pub struct Launched {
     pid: u32,
     java: String,
     classpath_entries: usize,
+    loader: String,
+    mods: usize,
     offline: bool,
 }
 
@@ -601,6 +604,8 @@ async fn launch_game(
         pid,
         java: plan.java.clone(),
         classpath_entries: plan.classpath_entries,
+        loader: plan.loader.clone(),
+        mods: plan.mods,
         offline: true,
     })
 }
@@ -844,6 +849,7 @@ pub fn headless_launch(id: &str, name: &str) {
 
     println!("java        {}", plan.java);
     println!("main class  {}", plan.main_class);
+    println!("loader      {} ({} mods)", plan.loader, plan.mods);
     println!("classpath   {} entries", plan.classpath_entries);
     println!("game dir    {}", plan.game_dir);
     println!("session     {} ({}) — offline", session.name, &session.uuid[..8]);
@@ -863,7 +869,7 @@ pub fn headless_launch(id: &str, name: &str) {
     use std::io::{BufRead, BufReader};
     if let Some(out) = child.stdout.take() {
         let reader = BufReader::new(out);
-        for line in reader.lines().take(14).map_while(|l| l.ok()) {
+        for line in reader.lines().take(40).map_while(|l| l.ok()) {
             println!("  | {line}");
         }
     }
