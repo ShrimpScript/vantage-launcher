@@ -84,11 +84,31 @@ pub struct Available {
     pub url: String,
 }
 
+/// Compare two dotted version strings numerically.
+///
+/// Segment by segment, missing segments counting as zero, so 0.10 beats 0.9 and 1.0 beats
+/// 0.99. Anything non-numeric compares as zero rather than failing, because a build that
+/// cannot be ordered should not be able to stop the check working.
+fn newer(a: &str, b: &str) -> std::cmp::Ordering {
+    let parse = |v: &str| -> Vec<u32> {
+        v.split('.').map(|p| p.trim().parse::<u32>().unwrap_or(0)).collect()
+    };
+    let (x, y) = (parse(a), parse(b));
+    for i in 0..x.len().max(y.len()) {
+        let cmp = x.get(i).copied().unwrap_or(0).cmp(&y.get(i).copied().unwrap_or(0));
+        if cmp != std::cmp::Ordering::Equal {
+            return cmp;
+        }
+    }
+    std::cmp::Ordering::Equal
+}
+
 /// The newest published client build, if there is one.
 ///
-/// Picks by list order rather than by parsing versions: GitHub returns releases newest first,
-/// and a comparison this would have to invent would disagree with the order a human sees on
-/// the releases page the moment a version scheme changes.
+/// Ordered by comparing the versions, not by trusting the list. GitHub does not return
+/// releases newest-first in any order this can rely on — asked for three builds it answered
+/// 0.9.0, 0.8.0, 0.10.0 — so taking the first entry silently pinned everyone to whichever
+/// build happened to be listed first.
 pub async fn latest(http: &reqwest::Client) -> Result<Option<Available>> {
     let releases: Vec<Release> = http
         .get(RELEASES)
@@ -99,18 +119,23 @@ pub async fn latest(http: &reqwest::Client) -> Result<Option<Available>> {
         .json()
         .await?;
 
+    let mut best: Option<Available> = None;
     for r in releases {
         let Some(version) = r.tag_name.strip_prefix(TAG_PREFIX) else {
             continue;
         };
-        if let Some(a) = r.assets.iter().find(|a| a.name.ends_with(".jar")) {
-            return Ok(Some(Available {
-                version: version.to_string(),
-                url: a.browser_download_url.clone(),
-            }));
+        let Some(a) = r.assets.iter().find(|a| a.name.ends_with(".jar")) else {
+            continue;
+        };
+        let candidate = Available {
+            version: version.to_string(),
+            url: a.browser_download_url.clone(),
+        };
+        if best.as_ref().is_none_or(|b| newer(&candidate.version, &b.version).is_gt()) {
+            best = Some(candidate);
         }
     }
-    Ok(None)
+    Ok(best)
 }
 
 pub fn status(store: &Store) -> ClientStatus {
