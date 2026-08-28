@@ -66,6 +66,10 @@ fn main() {
         vantage_launcher_lib::headless_set(&args[2]);
         return;
     }
+    if args.len() >= 2 && args[1] == "--video-defaults" {
+        vantage_launcher_lib::headless_video_defaults();
+        return;
+    }
     if args.len() >= 2 && args[1] == "--client" {
         vantage_launcher_lib::headless_client(args.get(2).map(|s| s.as_str()));
         return;

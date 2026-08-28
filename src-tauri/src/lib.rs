@@ -12,6 +12,7 @@ mod modrinth;
 mod pack;
 mod net;
 mod store;
+mod video;
 
 use client::ClientStatus;
 use error::{Error, Result};
@@ -41,6 +42,11 @@ Content
 The in-game client
     vantage --client                   which build is installed
     vantage --client <path|url>        install that jar as the client
+
+Video
+    vantage --video-defaults           VSync off, unlimited frames, max FOV,
+                                       GUI scale 3 (a new profile gets these
+                                       automatically on its first launch)
 
 Account
     vantage --auth-status              is a Microsoft client ID configured
@@ -565,6 +571,17 @@ async fn sign_in(state: State<'_, AppState>) -> Result<auth::Account> {
 }
 
 
+/* ── video defaults ──────────────────────────────────────────────────────── */
+
+/// Force the first-launch video settings onto this profile, and report them as the game's own
+/// settings screen words them.
+#[tauri::command]
+fn video_defaults(state: State<'_, AppState>) -> Result<Vec<String>> {
+    let game_dir = state.store.root.join("profiles").join("main");
+    let applied = video::apply(&game_dir)?;
+    Ok(applied.settings.iter().map(|(k, _)| video::describe(k).to_string()).collect())
+}
+
 /* ── the in-game client ──────────────────────────────────────────────────── */
 
 /// Which build of the Vantage client, if any, is in the profile.
@@ -678,7 +695,7 @@ pub fn run() {
             set_status, set_apply, set_remove,
             auth_status, sign_in, launch_game, game_running,
             pack_search, pack_install, packs_installed, pack_remove, installed_ids,
-            project_detail, client_status, client_install
+            project_detail, client_status, client_install, video_defaults
         ])
         .run(tauri::generate_context!())
         .expect("error while running Vantage");
@@ -847,6 +864,27 @@ pub fn headless_auth_status() {
             println!("  put it in: {}", path.display());
             println!("  or set:    VANTAGE_CLIENT_ID");
             println!("  apply for Minecraft API permission: https://aka.ms/mce-reviewappid");
+        }
+    }
+}
+
+/// `--video-defaults`: force Vantage's first-launch video settings onto this profile.
+///
+/// The same settings a new profile gets automatically. Exists because an existing profile is
+/// deliberately left alone, and there has to be a way to ask for them anyway.
+pub fn headless_video_defaults() {
+    let store = store::Store::discover().expect("store");
+    let game_dir = store.root.join("profiles").join("main");
+    match video::apply(&game_dir) {
+        Ok(applied) => {
+            println!("applied to {}", game_dir.join("options.txt").display());
+            for (k, _) in &applied.settings {
+                println!("  {}", video::describe(k));
+            }
+        }
+        Err(e) => {
+            eprintln!("could not write options.txt: {e}");
+            std::process::exit(1);
         }
     }
 }

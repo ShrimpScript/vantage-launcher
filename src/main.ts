@@ -459,6 +459,24 @@ rm.addEventListener("click", () => {
 });
 
 
+/* ── video defaults ──────────────────────────────────────────────────────
+   Minecraft's defaults are tuned for a machine that has to run the game at all,
+   not one playing PvP. VSync alone caps frames to the display and adds latency. */
+
+$("vidbtn").addEventListener("click", () => {
+  const btn = $<HTMLButtonElement>("vidbtn");
+  btn.disabled = true;
+  void invoke<string[]>("video_defaults")
+    .then((lines) => {
+      $("vidhint").textContent = lines.join(" · ");
+      btn.textContent = "Applied";
+    })
+    .catch((e) => {
+      $("vidhint").textContent = String(e);
+      btn.disabled = false;
+    });
+});
+
 /* ── the in-game client ──────────────────────────────────────────────────
    The other half of the product. The launcher used to have no idea whether it was
    there, which meant a hand-copied jar could be any version or missing entirely. */

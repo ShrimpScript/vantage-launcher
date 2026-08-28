@@ -137,6 +137,11 @@ pub async fn plan(
     // Mods live in the profile, but vanilla ignores them entirely. If any are present the
     // game must start through Fabric or the whole mod feature is a no-op.
     let game_dir = store.root.join("profiles").join("main");
+
+    // A profile that has never been launched gets sensible video settings written before the
+    // game reads them. Only ever on a first launch — see video.rs.
+    let _ = crate::video::seed(&game_dir);
+
     let mods_dir = game_dir.join("mods");
     let mod_count = count_mods(&mods_dir);
 
