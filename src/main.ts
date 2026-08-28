@@ -39,6 +39,7 @@ type SetView = {
   members: SetMember[]; total_bytes: number; applied: boolean;
   loader: string; version_id: string;
 };
+type ClientStatus = { version: string | null; file: string | null };
 type SetReport = { installed: number; bytes: number; mrpack: string; seconds: number };
 type Account = { id: string; name: string };
 type AuthStatus = { configured: boolean; client_id_path: string; account: Account | null };
@@ -176,6 +177,7 @@ async function inspect(id: string) {
     await setArt(id, i.installed);
     await setFace(id, i.installed);
     void refreshSet();
+    void refreshClient();
   } catch (e) {
     if (mine !== token) return;
     $("state").textContent = "";
@@ -456,6 +458,23 @@ rm.addEventListener("click", () => {
   document.documentElement.classList.toggle("calm", on);
 });
 
+
+/* ── the in-game client ──────────────────────────────────────────────────
+   The other half of the product. The launcher used to have no idea whether it was
+   there, which meant a hand-copied jar could be any version or missing entirely. */
+
+async function refreshClient() {
+  try {
+    const c = await invoke<ClientStatus>("client_status");
+    $("clienttot").textContent = c.version ? c.version : "Not installed";
+    $("clientsub").textContent = c.version
+      ? "In this profile"
+      : "Build it and run vantage --client <jar>";
+  } catch {
+    $("clienttot").textContent = "Unknown";
+    $("clientsub").textContent = "";
+  }
+}
 
 /* ── the Vantage Set ─────────────────────────────────────────────────────
    Bundled by default, openable all the way down. Resolved live from Modrinth and

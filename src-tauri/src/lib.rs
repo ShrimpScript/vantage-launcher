@@ -1,3 +1,4 @@
+mod client;
 mod error;
 mod fabric;
 mod install;
@@ -12,6 +13,7 @@ mod pack;
 mod net;
 mod store;
 
+use client::ClientStatus;
 use error::{Error, Result};
 use serde::Serialize;
 use std::sync::Arc;
@@ -35,6 +37,10 @@ Content
                                        install a resource pack or shader
                                        kind: resourcepack | shader
     vantage --set <version>            apply the Vantage Set and write the .mrpack
+
+The in-game client
+    vantage --client                   which build is installed
+    vantage --client <path|url>        install that jar as the client
 
 Account
     vantage --auth-status              is a Microsoft client ID configured
@@ -559,6 +565,20 @@ async fn sign_in(state: State<'_, AppState>) -> Result<auth::Account> {
 }
 
 
+/* ── the in-game client ──────────────────────────────────────────────────── */
+
+/// Which build of the Vantage client, if any, is in the profile.
+#[tauri::command]
+fn client_status(state: State<'_, AppState>) -> client::ClientStatus {
+    client::status(&state.store)
+}
+
+/// Install a client jar from a local path or a URL, replacing any older build.
+#[tauri::command]
+async fn client_install(state: State<'_, AppState>, source: String) -> Result<String> {
+    client::install(&state.http, &state.store, &source).await
+}
+
 /* ── launching ───────────────────────────────────────────────────────────── */
 
 #[derive(Serialize)]
@@ -658,7 +678,7 @@ pub fn run() {
             set_status, set_apply, set_remove,
             auth_status, sign_in, launch_game, game_running,
             pack_search, pack_install, packs_installed, pack_remove, installed_ids,
-            project_detail
+            project_detail, client_status, client_install
         ])
         .run(tauri::generate_context!())
         .expect("error while running Vantage");
@@ -827,6 +847,38 @@ pub fn headless_auth_status() {
             println!("  put it in: {}", path.display());
             println!("  or set:    VANTAGE_CLIENT_ID");
             println!("  apply for Minecraft API permission: https://aka.ms/mce-reviewappid");
+        }
+    }
+}
+
+/// `--client [source]`: report the installed in-game client, or install one.
+///
+/// With no argument this is a status line. With a path or URL it installs that jar, which is
+/// how a locally built client gets into the profile without copying files by hand.
+pub fn headless_client(source: Option<&str>) {
+    let store = store::Store::discover().expect("store");
+    let Some(source) = source else {
+        match client::status(&store) {
+            ClientStatus { version: Some(v), file: Some(f) } => {
+                println!("Vantage client {v}");
+                println!("  {}", store.profile_mods("main").join(f).display());
+            }
+            _ => {
+                println!("no Vantage client installed");
+                println!("  build one:   cd <client repo> && ./gradlew build");
+                println!("  install it:  vantage --client build/libs/vantage-core-<version>.jar");
+            }
+        }
+        return;
+    };
+
+    let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+    let http = net::client().expect("http client");
+    match rt.block_on(client::install(&http, &store, source)) {
+        Ok(v) => println!("installed Vantage client {v}"),
+        Err(e) => {
+            eprintln!("client install failed: {e}");
+            std::process::exit(1);
         }
     }
 }

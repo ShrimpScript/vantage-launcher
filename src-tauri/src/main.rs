@@ -66,6 +66,10 @@ fn main() {
         vantage_launcher_lib::headless_set(&args[2]);
         return;
     }
+    if args.len() >= 2 && args[1] == "--client" {
+        vantage_launcher_lib::headless_client(args.get(2).map(|s| s.as_str()));
+        return;
+    }
     if args.len() >= 4 && args[1] == "--add" {
         vantage_launcher_lib::headless_add(&args[2], &args[3]);
         return;
