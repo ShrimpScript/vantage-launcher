@@ -178,6 +178,7 @@ async function inspect(id: string) {
     await setFace(id, i.installed);
     void refreshSet();
     void refreshClient();
+    void refreshWho();
   } catch (e) {
     if (mine !== token) return;
     $("state").textContent = "";
@@ -279,6 +280,9 @@ function goto(name: string) {
     // a search screen that needs a click before you can type is a search screen with a bug
     requestAnimationFrame(() => q.focus());
   }
+  if (name === "accounts") {
+    void refreshAccounts();
+  }
   if (name === "packs") {
     void refreshPacks();
     requestAnimationFrame(() => pq.focus());
@@ -288,7 +292,7 @@ function goto(name: string) {
 railBtns.forEach((b) => b.addEventListener("click", () => goto(b.dataset.goto!)));
 
 // Keyboard is the primary path (DESIGN.md §7): every screen is one chord away.
-const ORDER = ["play", "mods", "packs", "settings"];
+const ORDER = ["play", "mods", "packs", "accounts", "settings"];
 window.addEventListener("keydown", (e) => {
   if (!e.ctrlKey && !e.metaKey) return;
   const i = Number(e.key) - 1;
@@ -428,28 +432,7 @@ async function refreshSettings() {
   $("storepath").textContent = s.root;
   $("storeval").textContent = s.files ? `${gb(s.bytes)} · ${n(s.files)} files` : "empty";
 
-  const a = await invoke<AuthStatus>("auth_status");
-  const btn = $<HTMLButtonElement>("signin");
-  btn.disabled = !a.configured;
-  $("authhint").innerHTML = a.configured
-    ? `Ready. Sign-in opens your browser once and comes straight back — no code to type. Refresh tokens go to your OS keychain, never a file.`
-    : `Needs an Azure client ID (public, not a secret). Register an app for personal Microsoft accounts, apply at <code>https://aka.ms/mce-reviewappid</code>, then put the ID in <code>${a.client_id_path}</code>.`;
 }
-$("signin").addEventListener("click", async () => {
-  const btn = $<HTMLButtonElement>("signin");
-  btn.disabled = true;
-  btn.textContent = "Waiting for your browser…";
-  try {
-    const acct = await invoke<Account>("sign_in");
-    document.querySelector(".who")!.textContent = acct.name;
-    document.querySelector("#acctsub")!.textContent = "Signed in";
-    btn.textContent = "Signed in";
-  } catch (e) {
-    btn.disabled = false;
-    btn.textContent = "Sign in";
-    $("authhint").textContent = String(e);
-  }
-});
 
 const rm = $<HTMLButtonElement>("rm");
 rm.addEventListener("click", () => {
@@ -458,6 +441,98 @@ rm.addEventListener("click", () => {
   document.documentElement.classList.toggle("calm", on);
 });
 
+
+/* ── accounts ────────────────────────────────────────────────────────────
+   Only Microsoft accounts are listed. There is deliberately no way to add an
+   offline account beside a real one — that is the shape a launcher takes when it
+   is used to play without owning the game. The offline session below is a
+   different thing: it is what runs before sign-in works, and servers reject it. */
+
+type StoredAccount = { id: string; name: string };
+type AccountsState = { list: StoredAccount[]; active: string | null; offline_name: string };
+
+function paintAccounts(a: AccountsState) {
+  const list = $("acctlist");
+  if (a.list.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "setrow";
+    empty.innerHTML =
+      '<div class="lhs"><b>No accounts yet</b><span>Sign in below to play online. ' +
+      "Until then Vantage runs an offline session, which works for singleplayer.</span></div>";
+    list.replaceChildren(empty);
+  } else {
+    list.replaceChildren(
+      ...a.list.map((acct) => {
+        const row = document.createElement("div");
+        row.className = "setrow";
+        const on = acct.id === a.active;
+        row.innerHTML =
+          `<div class="lhs acctrow"><span class="active-dot${on ? "" : " off"}"></span>` +
+          `<span><b class="who">${acct.name}</b><br><span class="tag">${on ? "Playing as this account" : "Signed in"}</span></span></div>`;
+        const actions = document.createElement("span");
+        actions.className = "namefield";
+        if (!on) {
+          const use = document.createElement("button");
+          use.className = "act";
+          use.textContent = "Use";
+          use.addEventListener("click", () => {
+            void invoke<AccountsState>("account_select", { id: acct.id }).then(paintAccounts);
+          });
+          actions.append(use);
+        }
+        const drop = document.createElement("button");
+        drop.className = "act quiet";
+        drop.textContent = "Remove";
+        drop.addEventListener("click", () => {
+          void invoke<AccountsState>("account_remove", { id: acct.id }).then(paintAccounts);
+        });
+        actions.append(drop);
+        row.append(actions);
+        return row;
+      }),
+    );
+  }
+  $<HTMLInputElement>("offname").value = a.offline_name;
+}
+
+async function refreshAccounts() {
+  const [a, auth] = await Promise.all([
+    invoke<AccountsState>("accounts_state"),
+    invoke<AuthStatus>("auth_status"),
+  ]);
+  paintAccounts(a);
+  const btn = $<HTMLButtonElement>("addacct");
+  btn.disabled = !auth.configured;
+  $("addhint").textContent = auth.configured
+    ? "Opens your browser once and comes straight back. Refresh tokens go to your OS keychain, never a file."
+    : `No Azure client ID yet. Put one in ${auth.client_id_path}`;
+}
+
+$("addacct").addEventListener("click", () => {
+  const btn = $<HTMLButtonElement>("addacct");
+  btn.disabled = true;
+  $("addhint").textContent = "Waiting for the browser…";
+  void invoke<StoredAccount>("sign_in")
+    .then(() => refreshAccounts())
+    .catch((e) => {
+      $("addhint").textContent = String(e);
+      btn.disabled = false;
+    });
+});
+
+$("savename").addEventListener("click", () => {
+  const value = $<HTMLInputElement>("offname").value;
+  void invoke<AccountsState>("offline_name", { name: value })
+    .then((a) => {
+      paintAccounts(a);
+      // On the row, not in the toast on the play screen — an error you cannot see from the
+      // screen that caused it may as well not have been reported.
+      $("namehint").textContent = `Singleplayer will call you ${a.offline_name}.`;
+    })
+    .catch((e) => {
+      $("namehint").textContent = String(e);
+    });
+});
 
 /* ── video defaults ──────────────────────────────────────────────────────
    Minecraft's defaults are tuned for a machine that has to run the game at all,
@@ -480,6 +555,20 @@ $("vidbtn").addEventListener("click", () => {
 /* ── the in-game client ──────────────────────────────────────────────────
    The other half of the product. The launcher used to have no idea whether it was
    there, which meant a hand-copied jar could be any version or missing entirely. */
+
+/** Who the Play button will launch as, on the home card. */
+async function refreshWho() {
+  try {
+    const a = await invoke<AccountsState>("accounts_state");
+    const active = a.list.find((x) => x.id === a.active);
+    document.querySelector(".who")!.textContent = active ? active.name : a.offline_name;
+    document.querySelector("#acctsub")!.textContent = active
+      ? "Signed in"
+      : "Offline session · singleplayer";
+  } catch {
+    // the card keeps whatever it last showed rather than blanking
+  }
+}
 
 async function refreshClient() {
   try {

@@ -5,6 +5,7 @@ mod install;
 mod java;
 mod launch;
 mod jar;
+mod accounts;
 mod auth;
 mod manifest;
 mod meta;
@@ -28,8 +29,9 @@ vantage — a Minecraft: Java Edition launcher
 
 Versions
     vantage --install <version>        download and verify a version
-    vantage --launch <version> [name]  start the game
-                                       (offline session until Microsoft sign-in)
+    vantage --launch <version> [name]  start the game (offline session until
+                                       Microsoft sign-in; without a name, plays
+                                       as whoever the Accounts screen selected)
 
 Content
     vantage --mods <version> <query>   search Modrinth for mods
@@ -552,11 +554,39 @@ pub struct AuthStatus {
 
 #[tauri::command]
 fn auth_status(state: State<'_, AppState>) -> AuthStatus {
+    let a = accounts::load(&state.store.root);
     AuthStatus {
         configured: auth::client_id(&state.store.root).is_some(),
         client_id_path: state.store.root.join("client-id.txt").display().to_string(),
-        account: None,
+        account: a
+            .active
+            .as_ref()
+            .and_then(|id| a.list.iter().find(|x| &x.id == id))
+            .map(|x| auth::Account { id: x.id.clone(), name: x.name.clone() }),
     }
+}
+
+/* ── accounts ────────────────────────────────────────────────────────────── */
+
+/// Everything the accounts screen needs, in one call.
+#[tauri::command]
+fn accounts_state(state: State<'_, AppState>) -> accounts::Accounts {
+    accounts::load(&state.store.root)
+}
+
+#[tauri::command]
+fn account_select(state: State<'_, AppState>, id: String) -> Result<accounts::Accounts> {
+    accounts::select(&state.store.root, &id)
+}
+
+#[tauri::command]
+fn account_remove(state: State<'_, AppState>, id: String) -> Result<accounts::Accounts> {
+    accounts::remove(&state.store.root, &id)
+}
+
+#[tauri::command]
+fn offline_name(state: State<'_, AppState>, name: String) -> Result<accounts::Accounts> {
+    accounts::set_offline_name(&state.store.root, &name)
 }
 
 #[tauri::command]
@@ -567,7 +597,9 @@ async fn sign_in(state: State<'_, AppState>) -> Result<auth::Account> {
             state.store.root.join("client-id.txt").display()
         ))
     })?;
-    auth::sign_in(&state.http, &id).await
+    let account = auth::sign_in(&state.http, &id).await?;
+    accounts::add(&state.store.root, &account.id, &account.name)?;
+    Ok(account)
 }
 
 
@@ -621,7 +653,10 @@ async fn launch_game(
     if state.running.lock().map(|g| g.is_some()).unwrap_or(false) {
         return Err(Error::Other("the game is already running".into()));
     }
-    let session = launch::Session::offline(&name);
+    // `name` is what the window asked for; the account store is what the player actually
+    // chose. Preferring the store means the launch name cannot drift from the accounts screen.
+    let play_as = accounts::play_name(&state.store.root);
+    let session = launch::Session::offline(if play_as.is_empty() { &name } else { &play_as });
     let (plan, dir) = launch::plan(&state.http, &state.store, &id, &session, memory_mb).await?;
     let mut child = launch::spawn(&plan, &dir)?;
     let pid = child.id();
@@ -695,7 +730,8 @@ pub fn run() {
             set_status, set_apply, set_remove,
             auth_status, sign_in, launch_game, game_running,
             pack_search, pack_install, packs_installed, pack_remove, installed_ids,
-            project_detail, client_status, client_install, video_defaults
+            project_detail, client_status, client_install, video_defaults,
+            accounts_state, account_select, account_remove, offline_name
         ])
         .run(tauri::generate_context!())
         .expect("error while running Vantage");
@@ -924,12 +960,18 @@ pub fn headless_client(source: Option<&str>) {
 /// `--launch <version> [name]`: assemble the command line and start the game.
 /// Uses an offline session until Microsoft approves the app — singleplayer works,
 /// online servers correctly refuse it.
-pub fn headless_launch(id: &str, name: &str) {
+pub fn headless_launch(id: &str, name: Option<&str>) {
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
     let outcome = rt.block_on(async {
         let http = net::client()?;
         let store = store::Store::discover()?;
-        let session = launch::Session::offline(name);
+        // An explicit name on the command line wins; otherwise play as whoever the accounts
+        // screen has chosen, so the two ways in agree about who is playing.
+        let who = match name {
+            Some(n) => n.to_string(),
+            None => accounts::play_name(&store.root),
+        };
+        let session = launch::Session::offline(&who);
         let (plan, dir) = launch::plan(&http, &store, id, &session, 4096).await?;
         Ok::<_, Error>((plan, dir, session))
     });

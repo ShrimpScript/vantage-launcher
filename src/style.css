@@ -390,3 +390,15 @@ html.calm *{animation:none!important; transition:none!important}
 .cta.running{background:var(--raised); color:var(--ok); opacity:1}
 .cta.running::before{content:""; width:8px; height:8px; border-radius:50%;
   background:var(--ok); display:inline-block; margin-right:10px; vertical-align:middle}
+
+/* accounts */
+.namefield{display:flex; gap:8px; align-items:center; flex:0 0 auto}
+.txt{background:var(--raised); color:var(--text); border-radius:10px; padding:10px 12px;
+  width:170px; font-family:var(--body); font-size:15px; border:1px solid var(--edge)}
+.txt:focus{outline:none; border-color:var(--amber)}
+.lhs.acctrow{flex-direction:row; align-items:center; gap:14px}
+.acctrow .tag{line-height:1.4}
+.acctrow .who{font-weight:600; font-size:15.5px; color:var(--text)}
+.acctrow .tag{font-size:13.5px; color:var(--faint)}
+.active-dot{width:8px; height:8px; border-radius:50%; background:var(--amber); flex:0 0 auto}
+.active-dot.off{background:var(--edge)}

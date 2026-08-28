@@ -54,8 +54,7 @@ fn main() {
         return;
     }
     if args.len() >= 3 && args[1] == "--launch" {
-        let name = args.get(3).map(String::as_str).unwrap_or("Player");
-        vantage_launcher_lib::headless_launch(&args[2], name);
+        vantage_launcher_lib::headless_launch(&args[2], args.get(3).map(String::as_str));
         return;
     }
     if args.len() >= 5 && args[1] == "--pack" {
