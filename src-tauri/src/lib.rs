@@ -44,6 +44,7 @@ Content
 The in-game client
     vantage --client                   which build is installed
     vantage --client <path|url>        install that jar as the client
+    vantage --client update            fetch the newest published build
 
 Video
     vantage --video-defaults           VSync off, unlimited frames, max FOV,
@@ -628,6 +629,12 @@ async fn client_install(state: State<'_, AppState>, source: String) -> Result<St
     client::install(&state.http, &state.store, &source).await
 }
 
+/// The newest published build, so the window can offer it.
+#[tauri::command]
+async fn client_latest(state: State<'_, AppState>) -> Result<Option<client::Available>> {
+    client::latest(&state.http).await
+}
+
 /* ── launching ───────────────────────────────────────────────────────────── */
 
 #[derive(Serialize)]
@@ -731,7 +738,7 @@ pub fn run() {
             auth_status, sign_in, launch_game, game_running,
             pack_search, pack_install, packs_installed, pack_remove, installed_ids,
             project_detail, client_status, client_install, video_defaults,
-            accounts_state, account_select, account_remove, offline_name
+            accounts_state, account_select, account_remove, offline_name, client_latest
         ])
         .run(tauri::generate_context!())
         .expect("error while running Vantage");
@@ -931,6 +938,32 @@ pub fn headless_video_defaults() {
 /// how a locally built client gets into the profile without copying files by hand.
 pub fn headless_client(source: Option<&str>) {
     let store = store::Store::discover().expect("store");
+    if source == Some("update") {
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let http = net::client().expect("http client");
+        match rt.block_on(async {
+            let available = client::latest(&http).await?;
+            let Some(a) = available else {
+                return Ok::<_, Error>(None);
+            };
+            let installed = client::status(&store).version;
+            if installed.as_deref() == Some(a.version.as_str()) {
+                return Ok(Some((a.version, false)));
+            }
+            client::install(&http, &store, &a.url).await?;
+            Ok(Some((a.version, true)))
+        }) {
+            Ok(Some((v, true))) => println!("installed Vantage client {v}"),
+            Ok(Some((v, false))) => println!("Vantage client {v} is already the newest"),
+            Ok(None) => println!("no published client build yet"),
+            Err(e) => {
+                eprintln!("update failed: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     let Some(source) = source else {
         match client::status(&store) {
             ClientStatus { version: Some(v), file: Some(f) } => {

@@ -570,16 +570,48 @@ async function refreshWho() {
   }
 }
 
+type Available = { version: string; url: string };
+
 async function refreshClient() {
+  const btn = $<HTMLButtonElement>("clientbtn");
   try {
     const c = await invoke<ClientStatus>("client_status");
     $("clienttot").textContent = c.version ? c.version : "Not installed";
+    $("clientsub").textContent = c.version ? "In this profile" : "Checking for a build…";
+
+    // The published build is a separate call so a slow or offline GitHub leaves the installed
+    // version on screen rather than blanking the card.
+    const latest = await invoke<Available | null>("client_latest");
+    if (!latest) {
+      if (!c.version) $("clientsub").textContent = "No published build yet";
+      btn.hidden = true;
+      return;
+    }
+    if (latest.version === c.version) {
+      $("clientsub").textContent = "In this profile · newest";
+      btn.hidden = true;
+      return;
+    }
     $("clientsub").textContent = c.version
-      ? "In this profile"
-      : "Build it and run vantage --client <jar>";
+      ? `In this profile · ${latest.version} available`
+      : `${latest.version} available`;
+    btn.hidden = false;
+    btn.textContent = c.version ? "Update" : "Install";
+    btn.onclick = () => {
+      btn.disabled = true;
+      btn.textContent = "Installing…";
+      void invoke<string>("client_install", { source: latest.url })
+        .then(() => refreshClient())
+        .catch((e) => {
+          $("clientsub").textContent = String(e);
+          btn.disabled = false;
+        })
+        .finally(() => { btn.disabled = false; });
+    };
   } catch {
     $("clienttot").textContent = "Unknown";
     $("clientsub").textContent = "";
+    btn.hidden = true;
   }
 }
 

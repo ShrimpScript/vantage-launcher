@@ -14,6 +14,17 @@ use crate::store::Store;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+/// Where published client builds live.
+///
+/// The launcher's own repository, because a release asset there is public even though the
+/// client's source is not — which is the arrangement the project settled on: open launcher,
+/// closed client, distributed binary.
+const RELEASES: &str =
+    "https://api.github.com/repos/ShrimpScript/vantage-launcher/releases?per_page=20";
+
+/// Tag prefix that marks a release as a client build rather than a launcher one.
+const TAG_PREFIX: &str = "client-";
+
 /// The mod id declared in the client's `fabric.mod.json`.
 const MOD_ID: &str = "vantage";
 
@@ -52,6 +63,54 @@ fn find(mods_dir: &Path) -> Option<(PathBuf, String)> {
         }
     }
     None
+}
+
+#[derive(Deserialize)]
+struct Release {
+    tag_name: String,
+    #[serde(default)]
+    assets: Vec<Asset>,
+}
+
+#[derive(Deserialize)]
+struct Asset {
+    name: String,
+    browser_download_url: String,
+}
+
+#[derive(Serialize)]
+pub struct Available {
+    pub version: String,
+    pub url: String,
+}
+
+/// The newest published client build, if there is one.
+///
+/// Picks by list order rather than by parsing versions: GitHub returns releases newest first,
+/// and a comparison this would have to invent would disagree with the order a human sees on
+/// the releases page the moment a version scheme changes.
+pub async fn latest(http: &reqwest::Client) -> Result<Option<Available>> {
+    let releases: Vec<Release> = http
+        .get(RELEASES)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    for r in releases {
+        let Some(version) = r.tag_name.strip_prefix(TAG_PREFIX) else {
+            continue;
+        };
+        if let Some(a) = r.assets.iter().find(|a| a.name.ends_with(".jar")) {
+            return Ok(Some(Available {
+                version: version.to_string(),
+                url: a.browser_download_url.clone(),
+            }));
+        }
+    }
+    Ok(None)
 }
 
 pub fn status(store: &Store) -> ClientStatus {
