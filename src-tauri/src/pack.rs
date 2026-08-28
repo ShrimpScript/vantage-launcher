@@ -20,6 +20,9 @@ pub const MEMBERS: &[(&str, &str, &str)] = &[
     ("lithium", "Lithium", "tick engine"),
     ("immediatelyfast", "ImmediatelyFast", "draw calls"),
     ("ferrite-core", "FerriteCore", "memory"),
+    ("entityculling", "Entity Culling", "hidden entities"),
+    ("moreculling", "More Culling", "hidden faces"),
+    ("krypton", "Krypton", "network"),
     ("fabric-api", "Fabric API", "dependency"),
 ];
 
@@ -102,6 +105,78 @@ async fn fabric_loader(http: &reqwest::Client, game_version: &str) -> Result<Str
         .ok_or_else(|| Error::Other(format!("Fabric has no loader for {game_version}")))
 }
 
+/// Resolve the required dependencies that the pinned members do not already cover.
+///
+/// One level deep on purpose. Every dependency the Set has actually needed is a library that
+/// itself depends on nothing outside Fabric API, and a full transitive walk would fan out into
+/// Modrinth calls on every resolve for a case that has not arisen. If it ever does, the game
+/// says so plainly at startup rather than failing quietly.
+async fn extras(
+    http: &reqwest::Client,
+    game_version: &str,
+    needed: &[String],
+    satisfied: &[String],
+) -> Result<Vec<(Member, PackFile)>> {
+    let mut wanted: Vec<&String> = Vec::new();
+    for id in needed {
+        if !satisfied.contains(id) && !wanted.contains(&id) {
+            wanted.push(id);
+        }
+    }
+    if wanted.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let futs = wanted.into_iter().map(|id| async move {
+        let versions = modrinth::versions(http, id, game_version).await?;
+        let Some(ver) = versions.into_iter().next() else {
+            return Err(Error::Other(format!(
+                "a Set member needs {id}, which has no Fabric build for {game_version}"
+            )));
+        };
+        let file = ver
+            .primary()
+            .ok_or_else(|| Error::Other(format!("{id} {} has no file", ver.version_number)))?
+            .clone();
+        Ok::<_, Error>((
+            Member {
+                slug: id.clone(),
+                title: id.clone(),
+                role: "dependency",
+                icon_url: None,
+                color: None,
+                version_number: ver.version_number.clone(),
+                version_type: ver.version_type.clone(),
+                filename: file.filename.clone(),
+                bytes: file.size,
+            },
+            PackFile {
+                path: format!("mods/{}", file.filename),
+                hashes: file.hashes.clone(),
+                downloads: vec![file.url.clone()],
+                file_size: file.size,
+                env: Env { client: "required".into(), server: "unsupported".into() },
+            },
+        ))
+    });
+    let mut out = futures::future::try_join_all(futs).await?;
+
+    // Name and illustrate them the same way members are. Dependencies are declared by opaque
+    // id, and a row reading "9s6osm5g" tells a player nothing about what is in their game.
+    let ids: Vec<&str> = out.iter().map(|(m, _): &(Member, PackFile)| m.slug.as_str()).collect();
+    if let Ok(projects) = modrinth::projects(http, &ids).await {
+        for (m, _) in out.iter_mut() {
+            if let Some(p) = projects.iter().find(|p| p.id == m.slug || p.slug == m.slug) {
+                m.title = p.title.clone();
+                m.slug = p.slug.clone();
+                m.icon_url = p.icon_url.clone();
+                m.color = p.color;
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Ask Modrinth for the newest build of every member and pin it by hash.
 ///
 /// All six lookups run concurrently. Doing them in sequence cost several seconds of dead
@@ -117,7 +192,9 @@ pub async fn resolve(http: &reqwest::Client, game_version: &str) -> Result<Resol
             .primary()
             .ok_or_else(|| Error::Other(format!("{slug} {} has no file", ver.version_number)))?
             .clone();
+        let needs: Vec<String> = ver.required().iter().map(|s| (*s).to_string()).collect();
         Ok::<_, Error>((
+            needs,
             Member {
                 slug: (*slug).to_string(),
                 title: (*title).to_string(),
@@ -149,11 +226,27 @@ pub async fn resolve(http: &reqwest::Client, game_version: &str) -> Result<Resol
     let mut files = Vec::with_capacity(resolved.len());
     let mut members = Vec::with_capacity(resolved.len());
     let mut total_bytes = 0u64;
-    for (mut m, f) in resolved {
+    let mut needed: Vec<String> = Vec::new();
+    let mut satisfied: Vec<String> = Vec::new();
+    for (needs, mut m, f) in resolved {
         if let Some(p) = projects.iter().find(|p| p.slug == m.slug) {
             m.icon_url = p.icon_url.clone();
             m.color = p.color;
+            satisfied.push(p.id.clone());
         }
+        needed.extend(needs);
+        total_bytes += m.bytes;
+        members.push(m);
+        files.push(f);
+    }
+
+    // Pull in anything a member declares it cannot run without. Pinning mods while ignoring
+    // their dependencies is how the Set shipped a build that would not start: More Culling
+    // gained a hard dependency on cloth-config and Fabric refused to load at all. Modrinth
+    // publishes these per version, so a dependency added in a later build is caught rather
+    // than assumed away.
+    for (mut m, f) in extras(http, game_version, &needed, &satisfied).await? {
+        m.role = "required by the above";
         total_bytes += m.bytes;
         members.push(m);
         files.push(f);

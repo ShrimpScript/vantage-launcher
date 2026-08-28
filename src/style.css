@@ -74,8 +74,8 @@ h1,h2,p{margin:0}
 
 /* the one amber thing on the screen */
 .cta{font-family:var(--display); font-variation-settings:'wdth' 118,'wght' 800;
-  font-size:26px; letter-spacing:.01em; background:var(--amber); color:var(--ground);
-  padding:20px 46px; border-radius:var(--r); white-space:nowrap;
+  font-size:18px; letter-spacing:.01em; background:var(--amber); color:var(--ground);
+  padding:13px 32px; border-radius:var(--r); white-space:nowrap;
   transition:transform var(--fast) var(--in), filter var(--fast) linear}
 .cta:hover:not(:disabled){transform:translateY(-2px); filter:brightness(1.06)}
 .cta:active:not(:disabled){transform:translateY(0)}
@@ -143,7 +143,7 @@ h1,h2,p{margin:0}
 .msg.bad{color:var(--text); box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--bad) 45%,transparent)}
 .msg.ok{color:var(--text); box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--ok) 40%,transparent)}
 
-@media(max-width:900px){ .scroll{padding:0 20px 32px} .top{padding:16px 20px 18px} .cta{font-size:22px; padding:18px 34px} }
+@media(max-width:900px){ .scroll{padding:0 20px 32px} .top{padding:16px 20px 18px} .cta{font-size:17px; padding:12px 24px} }
 @media(prefers-reduced-motion:no-preference){
   .hero,.block{animation:rise var(--slow) var(--in) backwards}
   .block{animation-delay:70ms}

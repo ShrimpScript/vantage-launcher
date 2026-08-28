@@ -49,6 +49,11 @@ pub struct Hashes {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Ver {
     pub id: String,
+    /// What this build needs alongside it. Published per version, so a mod that gained a
+    /// dependency in a later build is caught rather than assumed away. Not sent to the UI,
+    /// which has no use for it.
+    #[serde(default, skip_serializing)]
+    pub dependencies: Vec<Dependency>,
     /// Modrinth's version name, e.g. "ferritecore-9.0.0-fabric". Not a display title.
     #[allow(dead_code)]
     pub name: String,
@@ -58,7 +63,23 @@ pub struct Ver {
     pub files: Vec<ModFile>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct Dependency {
+    pub project_id: Option<String>,
+    /// "required", "optional", "incompatible" or "embedded".
+    pub dependency_type: String,
+}
+
 impl Ver {
+    /// Project ids this build cannot run without.
+    pub fn required(&self) -> Vec<&str> {
+        self.dependencies
+            .iter()
+            .filter(|d| d.dependency_type == "required")
+            .filter_map(|d| d.project_id.as_deref())
+            .collect()
+    }
+
     /// The jar to actually install. Modrinth marks one file primary; sources and
     /// javadoc jars ride along and must not be picked.
     pub fn primary(&self) -> Option<&ModFile> {
@@ -157,6 +178,8 @@ pub async fn versions(
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Project {
+    /// Modrinth's opaque id. Dependencies are declared by id, not slug.
+    pub id: String,
     pub slug: String,
     pub title: String,
     #[serde(default)]
