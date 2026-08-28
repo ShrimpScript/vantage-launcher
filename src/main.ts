@@ -35,6 +35,7 @@ type SetMember = {
   icon_url: string | null; color: number | null;
 };
 type SetView = {
+  jars: number;
   members: SetMember[]; total_bytes: number; applied: boolean;
   loader: string; version_id: string;
 };
@@ -488,9 +489,10 @@ async function refreshSet() {
         return el;
       }),
     );
-    const on = v.members.filter((m) => m.installed).length;
     if (mode === "play" && !gameRunning) {
-      $("pcmeta").textContent = `Fabric ${v.loader} · ${on} mod${on === 1 ? "" : "s"}`;
+      // The jar count, not the Set's member count: this line is a promise about what the
+      // game will load, and Fabric loads the whole folder.
+      $("pcmeta").textContent = `Fabric ${v.loader} · ${v.jars} mod${v.jars === 1 ? "" : "s"}`;
     }
     $("settot").textContent = v.applied ? "Applied" : `${v.members.length} pinned`;
     $("setsub").textContent = `${(v.total_bytes / 1048576).toFixed(1)} MB · Fabric ${v.loader}`;

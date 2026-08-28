@@ -444,6 +444,10 @@ pub struct SetView {
     applied: bool,
     loader: String,
     version_id: String,
+    /// Every jar in the profile's mods folder, not just the Set's members. Fabric loads the
+    /// folder, so this is the number that matches what the game reports on startup — a mod
+    /// dropped in by hand counts too.
+    jars: usize,
 }
 
 #[derive(Serialize)]
@@ -472,6 +476,7 @@ async fn set_status(state: State<'_, AppState>, game_version: String) -> Result<
         total_bytes: r.total_bytes,
         loader: r.index.dependencies.get("fabric-loader").cloned().unwrap_or_default(),
         version_id: r.index.version_id.clone(),
+        jars: launch::count_mods(&dir),
         members,
     })
 }

@@ -138,9 +138,7 @@ pub async fn plan(
     // game must start through Fabric or the whole mod feature is a no-op.
     let game_dir = store.root.join("profiles").join("main");
     let mods_dir = game_dir.join("mods");
-    let mod_count = std::fs::read_dir(&mods_dir)
-        .map(|rd| rd.flatten().filter(|e| e.file_name().to_string_lossy().ends_with(".jar")).count())
-        .unwrap_or(0);
+    let mod_count = count_mods(&mods_dir);
 
     let component = detail
         .java_version
@@ -243,6 +241,17 @@ pub async fn plan(
         },
         game_dir,
     ))
+}
+
+/// How many jars Fabric will load from a mods folder.
+///
+/// Counts the folder rather than the launcher's own record of what it installed, because
+/// Fabric loads whatever is there — a jar dropped in by hand loads too, and a count that
+/// disagreed with the game's own startup line would be worse than no count.
+pub fn count_mods(mods_dir: &Path) -> usize {
+    std::fs::read_dir(mods_dir)
+        .map(|rd| rd.flatten().filter(|e| e.file_name().to_string_lossy().ends_with(".jar")).count())
+        .unwrap_or(0)
 }
 
 /// Start it. Returns the child so the caller can supervise or capture output.
