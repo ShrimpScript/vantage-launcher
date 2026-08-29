@@ -285,6 +285,12 @@ function goto(name: string) {
   if (name === "accounts") {
     void refreshAccounts();
   }
+  if (name === "play") {
+    // Every other screen refreshes on entry and this one did not, so signing in on the
+    // accounts screen left the play card showing whoever it had found at startup.
+    void refreshWho();
+    void refreshClient();
+  }
   if (name === "packs") {
     void refreshPacks();
     requestAnimationFrame(() => pq.focus());

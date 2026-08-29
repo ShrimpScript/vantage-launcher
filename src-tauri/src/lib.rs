@@ -1050,7 +1050,15 @@ pub fn headless_launch(id: &str, name: Option<&str>) {
             None => {
                 let a = accounts::load(&store.root);
                 let resumed = match (a.active.as_deref(), auth::client_id(&store.root)) {
-                    (Some(id), Some(client)) => auth::refresh(&http, &client, id).await.ok(),
+                    (Some(id), Some(client)) => match auth::refresh(&http, &client, id).await {
+                        Ok(live) => Some(live),
+                        Err(e) => {
+                            // Say why. Falling back to offline is correct, but doing it
+                            // silently makes a broken sign-in look like a working one.
+                            eprintln!("could not resume sign-in: {e}");
+                            None
+                        }
+                    },
                     _ => None,
                 };
                 match resumed {
@@ -1077,7 +1085,12 @@ pub fn headless_launch(id: &str, name: Option<&str>) {
     println!("loader      {} ({} mods)", plan.loader, plan.mods);
     println!("classpath   {} entries", plan.classpath_entries);
     println!("game dir    {}", plan.game_dir);
-    println!("session     {} ({}) — offline", session.name, &session.uuid[..8]);
+    println!(
+        "session     {} ({}) — {}",
+        session.name,
+        &session.uuid[..8],
+        if session.kind == "msa" { "signed in" } else { "offline" }
+    );
     println!("jvm args    {}", plan.jvm_args.len());
     println!("game args   {}", plan.game_args.len());
 
