@@ -75,9 +75,35 @@ fn pkce() -> (String, String) {
 
 /// Block on the loopback listener until the browser comes back with `?code=`.
 /// Answers with a small page so the user is not left staring at a dead tab.
+/// How long to wait for the browser to come back before giving up.
+///
+/// Long enough for a real sign-in with two-factor, short enough that a hand-off which never
+/// happened ends in a message rather than a launcher that waits forever. It waits forever
+/// otherwise, and forever is indistinguishable from broken.
+const BROWSER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(240);
+
 fn await_code(listener: TcpListener, expect_state: &str) -> Result<String> {
-    for stream in listener.incoming() {
-        let mut stream = stream?;
+    listener.set_nonblocking(true)?;
+    let deadline = std::time::Instant::now() + BROWSER_TIMEOUT;
+    loop {
+        let stream = match listener.accept() {
+            Ok((s, _)) => s,
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if std::time::Instant::now() > deadline {
+                    return Err(Error::Other(
+                        "the browser never came back. If it opened on a profile picker or a \
+                         window you did not notice, finish signing in there and try again."
+                            .into(),
+                    ));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(120));
+                continue;
+            }
+            Err(e) => return Err(e.into()),
+        };
+        let _unused = &stream;
+        let mut stream = stream;
+        stream.set_nonblocking(false)?;
         let mut line = String::new();
         BufReader::new(&stream).read_line(&mut line)?;
 
@@ -120,7 +146,6 @@ fn await_code(listener: TcpListener, expect_state: &str) -> Result<String> {
             return Ok(c);
         }
     }
-    Err(Error::Other("browser never returned an authorization code".into()))
 }
 
 fn open_browser(url: &str) -> Result<()> {
@@ -313,7 +338,12 @@ pub async fn sign_in(http: &reqwest::Client, client_id: &str) -> Result<LiveSess
         scope = urlencode(SCOPE),
         redirect = urlencode(&redirect),
     );
-    open_browser(&url)?;
+    // Reported before waiting, so a hand-off that never lands is still recoverable: the URL
+    // is the whole sign-in, and pasting it into any browser works.
+    if let Err(e) = open_browser(&url) {
+        return Err(Error::Other(format!("{e}. Open this instead: {url}")));
+    }
+    eprintln!("sign-in URL: {url}");
 
     let expect = state.clone();
     let code = tokio::task::spawn_blocking(move || await_code(listener, &expect))
