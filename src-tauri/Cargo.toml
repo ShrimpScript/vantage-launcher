@@ -26,7 +26,16 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 base64 = "0.22"
 sha2 = "0.10"
 rand = "0.8"
-keyring = { version = "3", features = ["linux-native", "apple-native", "windows-native"] }
+# linux-native alone is the kernel keyring, which is a session cache and does not survive a
+# reboot — a launcher that forgets your sign-in every restart looks broken. The persistent
+# variant keeps that cache and adds the Secret Service behind it, so the token outlives the
+# session where one is running and still works where one is not.
+keyring = { version = "3", features = [
+    "linux-native-sync-persistent",
+    "crypto-rust",
+    "apple-native",
+    "windows-native",
+] }
 
 [profile.release]
 codegen-units = 1
