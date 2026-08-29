@@ -29,9 +29,8 @@ vantage — a Minecraft: Java Edition launcher
 
 Versions
     vantage --install <version>        download and verify a version
-    vantage --launch <version> [name]  start the game (offline session until
-                                       Microsoft sign-in; without a name, plays
-                                       as whoever the Accounts screen selected)
+    vantage --launch <version> [name]  start the game as the signed-in account;
+                                       a name forces an offline session instead
 
 Content
     vantage --mods <version> <query>   search Modrinth for mods
@@ -67,6 +66,8 @@ pub struct AppState {
     manifest: tokio::sync::Mutex<Option<meta::Manifest>>,
     /// pid of the running game, if any. The launcher should say when the game is up.
     running: std::sync::Mutex<Option<u32>>,
+    /// Live Minecraft tokens by account id, for this run only. Deliberately not persisted.
+    live: std::sync::Mutex<std::collections::HashMap<String, auth::LiveSession>>,
 }
 
 impl AppState {
@@ -598,9 +599,43 @@ async fn sign_in(state: State<'_, AppState>) -> Result<auth::Account> {
             state.store.root.join("client-id.txt").display()
         ))
     })?;
-    let account = auth::sign_in(&state.http, &id).await?;
-    accounts::add(&state.store.root, &account.id, &account.name)?;
-    Ok(account)
+    let live = auth::sign_in(&state.http, &id).await?;
+    accounts::add(&state.store.root, &live.account.id, &live.account.name)?;
+    remember(&state, live.clone());
+    Ok(live.account)
+}
+
+/// Hold a live token for this run. Never written to disk — see auth::LiveSession.
+fn remember(state: &State<'_, AppState>, live: auth::LiveSession) {
+    if let Ok(mut g) = state.live.lock() {
+        g.insert(live.account.id.clone(), live);
+    }
+}
+
+/// The token to play with, resuming a saved sign-in if this run has not signed in yet.
+///
+/// Returns None when nobody is signed in, or when the saved sign-in has lapsed — both of which
+/// mean the offline session, not an error. A launcher that refused to start the game because a
+/// refresh token expired would be worse than one that starts it in singleplayer.
+async fn live_session(state: &State<'_, AppState>) -> Option<auth::LiveSession> {
+    let accounts = accounts::load(&state.store.root);
+    let id = accounts.active?;
+    if let Ok(g) = state.live.lock() {
+        if let Some(found) = g.get(&id) {
+            return Some(found.clone());
+        }
+    }
+    let client = auth::client_id(&state.store.root)?;
+    match auth::refresh(&state.http, &client, &id).await {
+        Ok(live) => {
+            remember(state, live.clone());
+            Some(live)
+        }
+        Err(e) => {
+            eprintln!("could not resume sign-in: {e}");
+            None
+        }
+    }
 }
 
 
@@ -660,10 +695,18 @@ async fn launch_game(
     if state.running.lock().map(|g| g.is_some()).unwrap_or(false) {
         return Err(Error::Other("the game is already running".into()));
     }
-    // `name` is what the window asked for; the account store is what the player actually
-    // chose. Preferring the store means the launch name cannot drift from the accounts screen.
-    let play_as = accounts::play_name(&state.store.root);
-    let session = launch::Session::offline(if play_as.is_empty() { &name } else { &play_as });
+    // A real session when there is one, the offline stand-in otherwise. `name` is what the
+    // window asked for; the account store is what the player actually chose, and preferring it
+    // means the launch name cannot drift from the accounts screen.
+    let live = live_session(&state).await;
+    let offline = live.is_none();
+    let session = match &live {
+        Some(live) => launch::Session::microsoft(&live.account.name, &live.account.id, &live.token),
+        None => {
+            let play_as = accounts::play_name(&state.store.root);
+            launch::Session::offline(if play_as.is_empty() { &name } else { &play_as })
+        }
+    };
     let (plan, dir) = launch::plan(&state.http, &state.store, &id, &session, memory_mb).await?;
     let mut child = launch::spawn(&plan, &dir)?;
     let pid = child.id();
@@ -690,7 +733,7 @@ async fn launch_game(
         classpath_entries: plan.classpath_entries,
         loader: plan.loader.clone(),
         mods: plan.mods,
-        offline: true,
+        offline,
     })
 }
 
@@ -728,6 +771,7 @@ pub fn run() {
                 store: store::Store::discover()?,
                 manifest: tokio::sync::Mutex::new(None),
                 running: std::sync::Mutex::new(None),
+                live: std::sync::Mutex::new(std::collections::HashMap::new()),
             });
             Ok(())
         })
@@ -998,13 +1042,24 @@ pub fn headless_launch(id: &str, name: Option<&str>) {
     let outcome = rt.block_on(async {
         let http = net::client()?;
         let store = store::Store::discover()?;
-        // An explicit name on the command line wins; otherwise play as whoever the accounts
-        // screen has chosen, so the two ways in agree about who is playing.
-        let who = match name {
-            Some(n) => n.to_string(),
-            None => accounts::play_name(&store.root),
+        // An explicit name on the command line forces an offline session under that name —
+        // it is the way to play as somebody other than the signed-in account. Otherwise resume
+        // the saved sign-in, and fall back to offline if there is none or it has lapsed.
+        let session = match name {
+            Some(n) => launch::Session::offline(n),
+            None => {
+                let a = accounts::load(&store.root);
+                let resumed = match (a.active.as_deref(), auth::client_id(&store.root)) {
+                    (Some(id), Some(client)) => auth::refresh(&http, &client, id).await.ok(),
+                    _ => None,
+                };
+                match resumed {
+                    Some(live) => launch::Session::microsoft(
+                        &live.account.name, &live.account.id, &live.token),
+                    None => launch::Session::offline(&accounts::play_name(&store.root)),
+                }
+            }
         };
-        let session = launch::Session::offline(&who);
         let (plan, dir) = launch::plan(&http, &store, id, &session, 4096).await?;
         Ok::<_, Error>((plan, dir, session))
     });

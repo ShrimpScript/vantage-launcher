@@ -166,7 +166,9 @@ async function inspect(id: string) {
       go.disabled = false;
       mode = "play";
       $("pcmeta").textContent = gameRunning ? `Minecraft ${i.id} is running` : "Ready to play";
-      $("state").textContent = "Offline session — singleplayer only until you sign in.";
+      // Filled in by refreshWho once it knows whether anybody is signed in; asserting
+      // "offline" here made the launcher claim it every time, including after a sign-in.
+      $("state").textContent = "";
     } else {
       go.textContent = "Install";
       go.disabled = false;
@@ -565,6 +567,9 @@ async function refreshWho() {
     document.querySelector("#acctsub")!.textContent = active
       ? "Signed in"
       : "Offline session · singleplayer";
+    $("state").textContent = active
+      ? `Signed in as ${active.name}. Online servers will accept this session.`
+      : "Offline session — singleplayer only until you sign in.";
   } catch {
     // the card keeps whatever it last showed rather than blanking
   }

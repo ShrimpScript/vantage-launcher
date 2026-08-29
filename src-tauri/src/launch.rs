@@ -36,6 +36,20 @@ impl Session {
         );
         Self { name: name.to_string(), uuid, token: "0".into(), kind: "legacy" }
     }
+
+    /// A real, signed-in session.
+    ///
+    /// `kind` is "msa": the game uses it to decide that this is a Microsoft account and that
+    /// online play, skins and the realms list are available. An offline session says "legacy"
+    /// and the game correctly treats it as unauthenticated.
+    pub fn microsoft(name: &str, uuid: &str, token: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            uuid: uuid.to_string(),
+            token: token.to_string(),
+            kind: "msa",
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
